@@ -74,13 +74,13 @@ class StochasticTransformerKVCache:
         #     nn.LayerNorm(feat_dim)
         # )
 
-        self.stem = Tensor.sequential(
+        self.stem = [
             nn.Linear(stoch_dim+action_dim, feat_dim, bias=False),
             nn.LayerNorm(feat_dim),
-            Tensor.relu(),
+            Tensor.relu,
             nn.Linear(feat_dim, feat_dim, bias=False),
             nn.LayerNorm(feat_dim)
-        )
+        ]
 
         self.position_encoding = PositionalEncoding1D(max_length=max_length, embed_dim=feat_dim)
         # self.layer_stack = nn.ModuleList([
@@ -98,7 +98,8 @@ class StochasticTransformerKVCache:
         # action = F.one_hot(action.long(), self.action_dim).float()
         action = action.cast(dtypes.long).one_hot(self.action_dim).float()
         # feats = self.stem(torch.cat([samples, action], dim=-1))
-        feats = self.stem(Tensor.cat([samples, action], dim=-1))
+        # feats = self.stem(Tensor.cat([samples, action], dim=-1))
+        feats = Tensor.cat([samples, action], dim=-1).sequential(self.stem)
         feats = self.position_encoding(feats)
         feats = self.layer_norm(feats)
 

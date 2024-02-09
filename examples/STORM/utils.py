@@ -4,11 +4,31 @@ import numpy as np
 import random
 from tensorboardX import SummaryWriter
 # from einops import repeat
+from tinygrad import Tensor
 from contextlib import contextmanager
 import time
 import yacs
 from yacs.config import CfgNode as CN
 
+def cross_entropy(x:Tensor, y:Tensor, reduction:str='mean', label_smoothing:float=0.0) -> Tensor:
+    divisor = y.shape[1]
+    assert isinstance(divisor, int), "only supported int divisor"
+    y = (1 - label_smoothing)*y + label_smoothing / divisor
+    ret = -x.log_softmax(axis=1).mul(y).sum(axis=1)
+    if reduction=='none': return ret
+    if reduction=='sum': return ret.sum()
+    if reduction=='mean': return ret.mean()
+# def clip_grad_norm(parameters:[Tensor], max_norm, norm_type=2):
+#     total_norm = 0
+#     for p in parameters:
+#         param_norm = p.grad.data.norm(norm_type)
+#         total_norm += param_norm.item() ** norm_type
+#     total_norm = total_norm ** (1. / norm_type)
+#     clip_coef = max_norm / (total_norm + 1e-6)
+#     if clip_coef < 1:
+#         for p in parameters:
+#             p.grad.data.mul_(clip_coef)
+#     return total_norm
 def _sum_rightmost(value, dim):
     if dim == 0:
         return value

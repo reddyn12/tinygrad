@@ -4,7 +4,7 @@ import torch
 
 from tinygrad import Tensor, dtypes, nn
 import tinygrad
-
+import numpy as np
 # @torch.no_grad()
 def symlog(x):
     # return torch.sign(x) * torch.log(1 + torch.abs(x))
@@ -37,19 +37,28 @@ class SymLogTwoHotLoss:
         self.upper_bound = upper_bound
         self.bin_length = (upper_bound - lower_bound) / (num_classes-1)
 
-        # use register buffer so that bins move with .cuda() automatically
-        self.bins: torch.Tensor
-        self.register_buffer(
-            'bins', torch.linspace(-20, 20, num_classes), persistent=False)
+        # # use register buffer so that bins move with .cuda() automatically
+        # self.bins: torch.Tensor
+        # self.register_buffer(
+        #     'bins', torch.linspace(-20, 20, num_classes), persistent=False)
+        
+        self.bins = Tensor(np.linspace(-20, 20, num_classes))
+
 
     def forward(self, output:Tensor, target):
         target = symlog(target)
         assert target.min() >= self.lower_bound and target.max() <= self.upper_bound
 
-        index = torch.bucketize(target, self.bins)
+        # index = torch.bucketize(target, self.bins)
+        # diff = target - self.bins[index-1]  # -1 to get the lower bound
+        # weight = diff / self.bin_length
+        # weight = torch.clamp(weight, 0, 1)
+        # weight = weight.unsqueeze(-1)
+        
+        index = np.digitize(target, self.bins)
         diff = target - self.bins[index-1]  # -1 to get the lower bound
         weight = diff / self.bin_length
-        weight = torch.clamp(weight, 0, 1)
+        weight = weight.clip(0, 1)
         weight = weight.unsqueeze(-1)
 
         # target_prob = (1-weight)*F.one_hot(index-1, self.num_classes) + weight*F.one_hot(index, self.num_classes)

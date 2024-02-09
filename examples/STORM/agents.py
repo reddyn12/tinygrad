@@ -1,12 +1,14 @@
-import torch
-import torch.nn as tnn
-import torch.nn.functional as F
+# import torch
+# import torch.nn as tnn
+# import torch.nn.functional as F
 import numpy as np
 from tinygrad import Tensor, dtypes , nn
+from tinygrad.nn.state import get_state_dict, get_parameters
+
 import tinygrad
 # import torch.distributions as distributions
 import distributions
-from einops import rearrange, repeat
+# from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 import copy
 from torch.cuda.amp import autocast
@@ -58,69 +60,77 @@ class ActorCriticAgent:
             nn.Linear(feat_dim, hidden_dim, bias=False),
             nn.LayerNorm(hidden_dim),
             # nn.ReLU()
-            Tensor.relu()
+            Tensor.relu
         ]
         for i in range(num_layers - 1):
             actor.extend([
                 nn.Linear(hidden_dim, hidden_dim, bias=False),
                 nn.LayerNorm(hidden_dim),
                 # nn.ReLU()
-                Tensor.relu()
+                Tensor.relu
             ])
         actor.append(nn.Linear(hidden_dim, action_dim))
-        self.actor = Tensor.sequential(
-            actor,
-            # nn.Linear(hidden_dim, action_dim)
-        )
-
+        
+        # self.actor = Tensor.sequential(
+        #     actor,
+        #     # nn.Linear(hidden_dim, action_dim)
+        # )
+        self.actor = actor
         critic = [
             nn.Linear(feat_dim, hidden_dim, bias=False),
             nn.LayerNorm(hidden_dim),
             # nn.ReLU()
-            Tensor.relu()
+            Tensor.relu
         ]
         for i in range(num_layers - 1):
             critic.extend([
                 nn.Linear(hidden_dim, hidden_dim, bias=False),
                 nn.LayerNorm(hidden_dim),
                 # nn.ReLU()
-                Tensor.relu()
+                Tensor.relu
             ])
         critic.append(nn.Linear(hidden_dim, 255))
-        self.critic = Tensor.sequential(
-            critic,
-            # nn.Linear(hidden_dim, 255)
-        )
+        # self.critic = Tensor.sequential([
+        #     critic,
+        #     # nn.Linear(hidden_dim, 255)
+        # ])
+        self.critic = critic
         self.slow_critic = copy.deepcopy(self.critic)
 
         self.lowerbound_ema = EMAScalar(decay=0.99)
         self.upperbound_ema = EMAScalar(decay=0.99)
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-5, eps=1e-5)
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        # self.optimizer = torch.optim.Adam(self.parameters(), lr=3e-5, eps=1e-5)
+        self.optimizer = nn.optim.Adam(get_parameters(self), lr=3e-5, eps=1e-5)
+        # self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
 
     # @torch.no_grad()
     def update_slow_critic(self, decay=0.98):
-        for slow_param, param in zip(self.slow_critic.parameters(), self.critic.parameters()):
+        # for slow_param, param in zip(self.slow_critic.parameters(), self.critic.parameters()):
+        for slow_param, param in zip(get_parameters(self.slow_critic), get_parameters(self.critic)):
             slow_param.data.copy_(slow_param.data * decay + param.data * (1 - decay))
 
     def policy(self, x):
-        logits = self.actor(x)
+        # logits = self.actor(x)
+        logits = x.sequential(self.actor)
         return logits
 
     def value(self, x):
-        value = self.critic(x)
+        # value = self.critic(x)
+        value = x.sequential(self.critic)
         value = self.symlog_twohot_loss.decode(value)
         return value
 
     # @torch.no_grad()
     def slow_value(self, x):
-        value = self.slow_critic(x)
+        # value = self.slow_critic(x)
+        value = x.seqential(self.slow_critic)
         value = self.symlog_twohot_loss.decode(value)
         return value
 
     def get_logits_raw_value(self, x):
-        logits = self.actor(x)
+        # logits = self.actor(x)
+        logits = x.seqential(self.actor)
         raw_value = self.critic(x)
         return logits, raw_value
 
@@ -174,13 +184,27 @@ class ActorCriticAgent:
 
         loss = policy_loss + value_loss + slow_value_regularization_loss - self.entropy_coef * entropy_loss
 
-        # gradient descent
-        self.scaler.scale(loss).backward()
-        self.scaler.unscale_(self.optimizer)  # for clip grad
-        torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=100.0)
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
-        self.optimizer.zero_grad(set_to_none=True)
+        # # gradient descent
+        # self.scaler.scale(loss).backward()
+        # self.scaler.unscale_(self.optimizer)  # for clip grad
+        # torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=100.0)
+        # self.scaler.step(self.optimizer)
+        # self.scaler.update()
+        # self.optimizer.zero_grad(set_to_none=True)
+        
+        
+        # NEW gradient descent
+        self.optimizer.zero_grad()
+        loss.backward()
+        # Add clip gradient norm
+        max_norm = 100.0
+        for p in get_parameters(self):
+            grad_norm = p.grad.normal()
+            if grad_norm > max_norm:
+                p.grad = p.grad * (max_norm / grad_norm)
+        
+        self.optimizer.step()
+        
 
         self.update_slow_critic()
 
