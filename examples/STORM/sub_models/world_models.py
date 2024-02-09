@@ -307,6 +307,12 @@ class WorldModel:
         # self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
         self.optimizer = nn.optim.Adam(get_parameters(self), lr=1e-4)
         # self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+       
+       
+        # for p in get_parameters(self):
+            # p.realize()
+            # if p.requires_grad:
+            #     p.grad = Tensor.zeros_like(p)
 
     def encode_obs(self, obs):
         # with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
