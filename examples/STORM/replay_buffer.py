@@ -88,7 +88,9 @@ class ReplayBuffer():
                 termination.append(external_termination)
 
             # obs = torch.cat(obs, dim=0).float() / 255
+            # obs = Tensor(obs)
             obs = Tensor.cat(obs, dim=0).float() / 255
+            # obs = Tensor(obs).float() / 255
             # obs = rearrange(obs, "B T H W C -> B T C H W")
             obs = obs.permute(0,1,4,2,3)
             # action = torch.cat(action, dim=0)

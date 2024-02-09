@@ -28,7 +28,7 @@ import agents
 from sub_models.functions_losses import symexp
 from sub_models.world_models import WorldModel, MSELoss
 
-
+Tensor.dtype = dtypes.float32
 def build_single_env(env_name, image_size, seed):
     env = gymnasium.make(env_name, full_action_space=False, render_mode="rgb_array", frameskip=1)
     env = env_wrapper.SeedEnvWrapper(env, seed=seed)
@@ -85,6 +85,9 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
                                   imagine_batch_size, imagine_demonstration_batch_size,
                                   imagine_context_length, imagine_batch_length,
                                   save_every_steps, seed, logger):
+    # parameters = nn.state.get_parameters(world_model)
+    # for p in parameters: p.cast(dtypes.float32).realize()
+    
     # create ckpt dir
     os.makedirs(f"ckpt/{args.n}", exist_ok=True)
 
@@ -121,7 +124,10 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
                     greedy=False
                 )
 
-            context_obs.append(rearrange(torch.Tensor(current_obs).cuda(), "B H W C -> B 1 C H W")/255)
+            # context_obs.append(rearrange(torch.Tensor(current_obs).cuda(), "B H W C -> B 1 C H W")/255)
+            tempTens = Tensor(current_obs).permute(0, 3, 1, 2)
+            tempTens = tempTens.reshape((tempTens.shape[0],1,tempTens.shape[1],tempTens.shape[2],tempTens.shape[3]))
+            context_obs.append(tempTens/255)
             context_action.append(action)
         else:
             action = vec_env.action_space.sample()
@@ -189,9 +195,11 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
         # save model per episode
         if total_steps % (save_every_steps//num_envs) == 0:
             print(colorama.Fore.GREEN + f"Saving model at total steps {total_steps}" + colorama.Style.RESET_ALL)
-            torch.save(world_model.state_dict(), f"ckpt/{args.n}/world_model_{total_steps}.pth")
-            torch.save(agent.state_dict(), f"ckpt/{args.n}/agent_{total_steps}.pth")
-
+            # torch.save(world_model.state_dict(), f"ckpt/{args.n}/world_model_{total_steps}.pth")
+            # torch.save(agent.state_dict(), f"ckpt/{args.n}/agent_{total_steps}.pth")
+            
+            # nn.state.safe_save(nn.state.get_state_dict(world_model), f"ckpt/{args.n}/world_model_{total_steps}.bin")
+            # nn.state.safe_save(nn.state.get_state_dict(agent), f"ckpt/{args.n}/agent_{total_steps}.bin")
 
 def build_world_model(conf, action_dim):
     return WorldModel(
@@ -267,26 +275,27 @@ if __name__ == "__main__":
             replay_buffer.load_trajectory(path=args.trajectory_path)
 
         # train
-        joint_train_world_model_agent(
-            env_name=args.env_name,
-            num_envs=conf.JointTrainAgent.NumEnvs,
-            max_steps=conf.JointTrainAgent.SampleMaxSteps,
-            image_size=conf.BasicSettings.ImageSize,
-            replay_buffer=replay_buffer,
-            world_model=world_model,
-            agent=agent,
-            train_dynamics_every_steps=conf.JointTrainAgent.TrainDynamicsEverySteps,
-            train_agent_every_steps=conf.JointTrainAgent.TrainAgentEverySteps,
-            batch_size=conf.JointTrainAgent.BatchSize,
-            demonstration_batch_size=conf.JointTrainAgent.DemonstrationBatchSize if conf.JointTrainAgent.UseDemonstration else 0,
-            batch_length=conf.JointTrainAgent.BatchLength,
-            imagine_batch_size=conf.JointTrainAgent.ImagineBatchSize,
-            imagine_demonstration_batch_size=conf.JointTrainAgent.ImagineDemonstrationBatchSize if conf.JointTrainAgent.UseDemonstration else 0,
-            imagine_context_length=conf.JointTrainAgent.ImagineContextLength,
-            imagine_batch_length=conf.JointTrainAgent.ImagineBatchLength,
-            save_every_steps=conf.JointTrainAgent.SaveEverySteps,
-            seed=args.seed,
-            logger=logger
-        )
+        with Tensor.train():
+            joint_train_world_model_agent(
+                env_name=args.env_name,
+                num_envs=conf.JointTrainAgent.NumEnvs,
+                max_steps=conf.JointTrainAgent.SampleMaxSteps,
+                image_size=conf.BasicSettings.ImageSize,
+                replay_buffer=replay_buffer,
+                world_model=world_model,
+                agent=agent,
+                train_dynamics_every_steps=conf.JointTrainAgent.TrainDynamicsEverySteps,
+                train_agent_every_steps=conf.JointTrainAgent.TrainAgentEverySteps,
+                batch_size=conf.JointTrainAgent.BatchSize,
+                demonstration_batch_size=conf.JointTrainAgent.DemonstrationBatchSize if conf.JointTrainAgent.UseDemonstration else 0,
+                batch_length=conf.JointTrainAgent.BatchLength,
+                imagine_batch_size=conf.JointTrainAgent.ImagineBatchSize,
+                imagine_demonstration_batch_size=conf.JointTrainAgent.ImagineDemonstrationBatchSize if conf.JointTrainAgent.UseDemonstration else 0,
+                imagine_context_length=conf.JointTrainAgent.ImagineContextLength,
+                imagine_batch_length=conf.JointTrainAgent.ImagineBatchLength,
+                save_every_steps=conf.JointTrainAgent.SaveEverySteps,
+                seed=args.seed,
+                logger=logger
+            )
     else:
         raise NotImplementedError(f"Task {conf.Task} not implemented")
