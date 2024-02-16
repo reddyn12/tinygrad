@@ -91,9 +91,11 @@ class ReplayBuffer():
 
             # obs = torch.cat(obs, dim=0).float() / 255
             # obs = Tensor(obs)
+            obs = Tensor.cat(*obs, dim=0).float().realize()
             print(obs)
-            print(type(obs))
-            obs = Tensor.cat(obs, dim=0).float() / 255
+            print(obs.dtype)
+            obs = obs / 255
+            # obs = obs.div(255.)
             # obs = Tensor.cat(Tensor(obs), dim=0)#.float() #/ 255.
             # obs = Tensor(obs).float() / 255
             # obs = rearrange(obs, "B T H W C -> B T C H W")
