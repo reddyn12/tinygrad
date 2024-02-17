@@ -3,15 +3,20 @@ from einops import rearrange, repeat, reduce
 import numpy as np
 import torch
 
+r = Tensor.ones(16,64)
+r= r.one_hot(9)
+print(r.numpy())
+print(r.shape)
 
-t1 = torch.ones(16, 64, 64, 64, 3)
-t2 = Tensor.ones(16, 64, 64, 64, 3)
-a = [t2, t2]
-o1 = torch.cat([t1,t1], dim=0)
-o2 = Tensor.cat(*a, dim=0)
 
-print(o1.shape)
-print(o2.shape)
+# t1 = torch.ones(16, 64, 64, 64, 3)
+# t2 = Tensor.ones(16, 64, 64, 64, 3)
+# a = [t2, t2]
+# o1 = torch.cat([t1,t1], dim=0)
+# o2 = Tensor.cat(*a, dim=0)
+
+# print(o1.shape)
+# print(o2.shape)
 
 
 

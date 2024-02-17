@@ -20,6 +20,7 @@ import colorama
 import shutil
 # import pickle
 import os
+from tinygrad.nn.state import get_parameters
 
 from utils import Logger, load_config, seed_np#, seed_np_torch
 from replay_buffer import ReplayBuffer
@@ -28,7 +29,7 @@ import agents
 from sub_models.functions_losses import symexp
 from sub_models.world_models import WorldModel, MSELoss
 
-Tensor.dtype = dtypes.float32
+# Tensor.dtype = dtypes.float32
 def build_single_env(env_name, image_size, seed):
     env = gymnasium.make(env_name, full_action_space=False, render_mode="rgb_array", frameskip=1)
     env = env_wrapper.SeedEnvWrapper(env, seed=seed)
@@ -50,6 +51,7 @@ def build_vec_env(env_name, image_size, num_envs, seed):
 
 def train_world_model_step(replay_buffer: ReplayBuffer, world_model: WorldModel, batch_size, demonstration_batch_size, batch_length, logger):
     obs, action, reward, termination = replay_buffer.sample(batch_size, demonstration_batch_size, batch_length)
+    print(obs.shape, action.shape, reward.shape, termination.shape)
     world_model.update(obs, action, reward, termination, logger=logger)
 
 
@@ -62,8 +64,8 @@ def world_model_imagine_data(replay_buffer: ReplayBuffer,
     '''
     Sample context from replay buffer, then imagine data with world model and agent
     '''
-    world_model.eval()
-    agent.eval()
+    # world_model.eval()
+    # agent.eval()
 
     sample_obs, sample_action, sample_reward, sample_termination = replay_buffer.sample(
         imagine_batch_size, imagine_demonstration_batch_size, imagine_context_length)
@@ -106,21 +108,22 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
     for total_steps in tqdm(range(max_steps//num_envs)):
         # sample part >>>
         if replay_buffer.ready():
-            world_model.eval()
-            agent.eval()
+            # world_model.eval()
+            # agent.eval()
             # with torch.no_grad():
             if len(context_action) == 0:
                 action = vec_env.action_space.sample()
             else:
                 # context_latent = world_model.encode_obs(torch.cat(list(context_obs), dim=1))
-                context_latent = world_model.encode_obs(Tensor.cat(list(context_obs), dim=1))
-                model_context_action = np.stack(list(context_action), axis=1)
+                context_latent = world_model.encode_obs(Tensor.cat(*list(context_obs), dim=1))
+                # model_context_action = np.stack(list(context_action), axis=1)
+                model_context_action = Tensor.stack(*list(context_action), axis=1)
                 # model_context_action = torch.Tensor(model_context_action).cuda()
                 model_context_action = Tensor(model_context_action)
                 prior_flattened_sample, last_dist_feat = world_model.calc_last_dist_feat(context_latent, model_context_action)
                 action = agent.sample_as_env_action(
                     # torch.cat([prior_flattened_sample, last_dist_feat], dim=-1),
-                    Tensor.cat([prior_flattened_sample, last_dist_feat], dim=-1),
+                    Tensor.cat(*[prior_flattened_sample, last_dist_feat], dim=-1),
                     greedy=False
                 )
 
@@ -202,7 +205,8 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
             # nn.state.safe_save(nn.state.get_state_dict(agent), f"ckpt/{args.n}/agent_{total_steps}.bin")
 
 def build_world_model(conf, action_dim):
-    return WorldModel(
+
+    w = WorldModel(
         in_channels=conf.Models.WorldModel.InChannels,
         action_dim=action_dim,
         transformer_max_length=conf.Models.WorldModel.TransformerMaxLength,
@@ -210,10 +214,13 @@ def build_world_model(conf, action_dim):
         transformer_num_layers=conf.Models.WorldModel.TransformerNumLayers,
         transformer_num_heads=conf.Models.WorldModel.TransformerNumHeads
     )#.cuda()
+    # for p in get_parameters(w): p.realize()
+    for p in get_parameters(w): print(p.dtype, p.shape, p.device)
+    return w
 
 
 def build_agent(conf, action_dim):
-    return agents.ActorCriticAgent(
+    a= agents.ActorCriticAgent(
         feat_dim=32*32+conf.Models.WorldModel.TransformerHiddenDim,
         num_layers=conf.Models.Agent.NumLayers,
         hidden_dim=conf.Models.Agent.HiddenDim,
@@ -222,6 +229,9 @@ def build_agent(conf, action_dim):
         lambd=conf.Models.Agent.Lambda,
         entropy_coef=conf.Models.Agent.EntropyCoef,
     )#.cuda()
+    # for p in get_parameters(w): p.realize()
+    for p in get_parameters(a): print(p.dtype, p.shape, p.device)
+    return a
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 # import torch.nn as tnn
 # import torch.nn.functional as F
 
+from typing import Any
 from tinygrad import Tensor, dtypes, nn
 import tinygrad
 # from einops import repeat, rearrange
@@ -96,10 +97,16 @@ class StochasticTransformerKVCache:
         Normal forward pass
         '''
         # action = F.one_hot(action.long(), self.action_dim).float()
-        action = action.cast(dtypes.long).one_hot(self.action_dim).float()
+        # action = action.cast(dtypes.long).one_hot(self.action_dim).float()
+        # print(action.numpy())
+        print(action.shape,action.dtype)
+        
+        # print(self.action_dim)
+        # action = action.realize()
+        action = action.one_hot(self.action_dim).float()
         # feats = self.stem(torch.cat([samples, action], dim=-1))
         # feats = self.stem(Tensor.cat([samples, action], dim=-1))
-        feats = Tensor.cat([samples, action], dim=-1).sequential(self.stem)
+        feats = Tensor.cat(*[samples, action], dim=-1).sequential(self.stem)
         feats = self.position_encoding(feats)
         feats = self.layer_norm(feats)
 
@@ -107,6 +114,8 @@ class StochasticTransformerKVCache:
             feats, attn = layer(feats, feats, feats, mask)
 
         return feats
+    def __call__(self, samples, action:Tensor, mask):
+        return self.forward(samples, action, mask)
 
     def reset_kv_cache_list(self, batch_size, dtype):
         '''

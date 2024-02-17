@@ -91,21 +91,23 @@ class ReplayBuffer():
 
             # obs = torch.cat(obs, dim=0).float() / 255
             # obs = Tensor(obs)
-            obs = Tensor.cat(*obs, dim=0).float().realize()
-            print(obs)
-            print(obs.dtype)
-            obs = obs / 255
+            obs = Tensor.cat(*obs, dim=0).float() / 255
+            # print(obs.numpy())
+            # print(obs.dtype)
+            # print(obs.shape)
+            # print(obs[0])
+            # obs = obs / 255
             # obs = obs.div(255.)
             # obs = Tensor.cat(Tensor(obs), dim=0)#.float() #/ 255.
             # obs = Tensor(obs).float() / 255
             # obs = rearrange(obs, "B T H W C -> B T C H W")
             obs = obs.permute(0,1,4,2,3)
             # action = torch.cat(action, dim=0)
-            action = Tensor.cat(action, dim=0)
+            action = Tensor.cat(*action, dim=0)
             # reward = torch.cat(reward, dim=0)
-            reward = Tensor.cat(reward, dim=0)
+            reward = Tensor.cat(*reward, dim=0)
             # termination = torch.cat(termination, dim=0)
-            termination = Tensor.cat(termination, dim=0)
+            termination = Tensor.cat(*termination, dim=0)
         else:
             obs, action, reward, termination = [], [], [], []
             if batch_size > 0:

@@ -75,8 +75,10 @@ class EncoderBN:
         # x = x.repeat((batch_size,1,1,1,1))
         # x = x.reshape(x.shape[0],x.shape[1],
         #                                      x.shape[2]*x.shape[3]*x.shape[4])
-        x = x.reshape(batch_size, x.shape[0]//batch_size, x.shape[1] * x.shape[1] * x.shape[3])
+        x = x.reshape(batch_size, x.shape[0]//batch_size, x.shape[1] * x.shape[2] * x.shape[3])
         return x
+    def __call__(self, x:Tensor):
+        return self.forward(x)
 
 
 class DecoderBN:
@@ -124,6 +126,7 @@ class DecoderBN:
                 padding=1
             )
         )
+        self.backbone = backbone
         # self.backbone = nn.Sequential(*backbone)
         # self.backbone = Tensor.sequential(backbone)
     def forward(self, sample):
@@ -133,6 +136,8 @@ class DecoderBN:
         # obs_hat = rearrange(obs_hat, "(B L) C H W -> B L C H W", B=batch_size)
         obs_hat = obs_hat.reshape(batch_size, obs_hat.shape[0]//batch_size, obs_hat.shape[1], obs_hat.shape[2], obs_hat.shape[3])
         return obs_hat
+    def __call__(self, sample):
+        return self.forward(sample)
 
 
 class DistHead:
@@ -443,7 +448,7 @@ class WorldModel:
         obs_hat = self.image_decoder(flattened_sample)
 
         # transformer
-        temporal_mask = get_subsequent_mask_with_batch_length(batch_length, flattened_sample.device)
+        temporal_mask = get_subsequent_mask_with_batch_length(batch_length, flattened_sample.device).realize()
         dist_feat = self.storm_transformer(flattened_sample, action, temporal_mask)
         prior_logits = self.dist_head.forward_prior(dist_feat)
         # decoding reward and termination with dist_feat

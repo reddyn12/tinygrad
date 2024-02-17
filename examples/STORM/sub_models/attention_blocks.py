@@ -22,7 +22,7 @@ def get_subsequent_mask(seq):
 def get_subsequent_mask_with_batch_length(batch_length, device):
     ''' For masking out the subsequent info. '''
     # subsequent_mask = (1 - torch.triu(torch.ones((1, batch_length, batch_length), device=device), diagonal=1)).bool()
-    subsequent_mask = (1 - Tensor.ones((1, batch_length, batch_length), device=device)).triu(1).cast(dtypes.bool)
+    subsequent_mask = (1 - Tensor.ones((1, batch_length, batch_length))).triu(1).cast(dtypes.bool)
     return subsequent_mask
 
 
