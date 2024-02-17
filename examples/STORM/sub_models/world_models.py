@@ -7,8 +7,8 @@ import tinygrad
 from tinygrad.nn.state import get_state_dict, get_parameters
 from distributions import OneHotCategorical, Normal
 import distributions
-from einops import rearrange, repeat, reduce
-from einops.layers.torch import Rearrange
+# from einops import rearrange, repeat, reduce
+# from einops.layers.torch import Rearrange
 # from torch.cuda.amp import autocast
 from utils import cross_entropy
 from sub_models.functions_losses import SymLogTwoHotLoss

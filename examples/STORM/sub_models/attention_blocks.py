@@ -5,7 +5,7 @@
 from tinygrad import Tensor, dtypes, nn
 import tinygrad
 
-import numpy as np
+# import numpy as np
 from einops import rearrange, repeat
 
 

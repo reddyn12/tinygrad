@@ -214,8 +214,15 @@ def build_world_model(conf, action_dim):
         transformer_num_layers=conf.Models.WorldModel.TransformerNumLayers,
         transformer_num_heads=conf.Models.WorldModel.TransformerNumHeads
     )#.cuda()
-    # for p in get_parameters(w): p.realize()
-    for p in get_parameters(w): print(p.dtype, p.shape, p.device)
+    # for p in get_parameters(w):
+    #     temp = tuple(int(x) for x in p.shape) 
+    #     p = p.reshape(temp)
+    #     print(p.dtype, p.shape, p.device)
+    #     for s in temp:
+    #         print(s, type(s))
+    #     # p.assign(p.float())#(dtypes.float32)
+    #     p.realize()
+    # for p in get_parameters(w): print(p.dtype, p.shape, p.device)
     return w
 
 

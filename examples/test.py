@@ -4,10 +4,11 @@ import numpy as np
 import torch
 
 r = Tensor.ones(16,64)
-r= r.one_hot(9)
+r= r.one_hot(9).float()
 print(r.numpy())
 print(r.shape)
-
+for s in r.shape:
+    print(s, type(s))
 
 # t1 = torch.ones(16, 64, 64, 64, 3)
 # t2 = Tensor.ones(16, 64, 64, 64, 3)
@@ -18,7 +19,9 @@ print(r.shape)
 # print(o1.shape)
 # print(o2.shape)
 
+temp = (1.,2.,3.)
 
+print(temp)
 
 
 

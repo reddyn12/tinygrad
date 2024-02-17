@@ -104,6 +104,9 @@ class StochasticTransformerKVCache:
         # print(self.action_dim)
         # action = action.realize()
         action = action.one_hot(self.action_dim).float()
+        print('action one hot:', action.shape,action.dtype)
+        for s in action.shape:
+            print(s, type(s))
         # feats = self.stem(torch.cat([samples, action], dim=-1))
         # feats = self.stem(Tensor.cat([samples, action], dim=-1))
         feats = Tensor.cat(*[samples, action], dim=-1).sequential(self.stem)

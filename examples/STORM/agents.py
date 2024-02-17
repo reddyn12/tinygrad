@@ -24,6 +24,9 @@ def percentile(x:Tensor, percentage):
     # per = torch.kthvalue(flat_x, kth).values
     sorted_x = np.sort(flat_x.cpu().data)
     per = Tensor(sorted_x[kth])
+    # import sys
+    # print('percentile',per, per.dtype)
+    # sys.exit()
     return per
 
 # def calc_lambda_return(rewards, values, termination, gamma, lam, dtype=torch.float32):

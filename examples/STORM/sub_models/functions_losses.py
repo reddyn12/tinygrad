@@ -43,6 +43,10 @@ class SymLogTwoHotLoss:
         #     'bins', torch.linspace(-20, 20, num_classes), persistent=False)
         
         self.bins = Tensor(np.linspace(-20, 20, num_classes))
+        # import sys
+        # self.bins.realize()
+        # print(self.bins, self.bins.dtype)
+        # sys.exit()
 
 
     def forward(self, output:Tensor, target):
