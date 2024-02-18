@@ -1,14 +1,25 @@
-from tinygrad import Tensor, dtypes
+from tinygrad import Tensor, dtypes,nn
 from einops import rearrange, repeat, reduce
 import numpy as np
 import torch
 
-r = Tensor.ones(16,64)
-r= r.one_hot(9).float()
-print(r.numpy())
-print(r.shape)
-for s in r.shape:
-    print(s, type(s))
+t1 = torch.arange(64)
+t2 = Tensor.arange(64)
+p1 = torch.nn.Embedding(64,512)
+p2 = nn.Embedding(64,512)
+print(p1(t1))
+print(p2(t2).numpy())
+
+# r = Tensor.ones(16,64)
+# r= r.one_hot(9).float()
+# print(r.numpy())
+# print(r.shape)
+# for s in r.shape:
+#     print(s, type(s))
+
+
+# temp = (1.,2.,3.)
+# print(temp)
 
 # t1 = torch.ones(16, 64, 64, 64, 3)
 # t2 = Tensor.ones(16, 64, 64, 64, 3)
@@ -18,12 +29,6 @@ for s in r.shape:
 
 # print(o1.shape)
 # print(o2.shape)
-
-temp = (1.,2.,3.)
-
-print(temp)
-
-
 
 # dim = 10
 # t = np.arange(1000).reshape(10,10,10).astype(np.float32)

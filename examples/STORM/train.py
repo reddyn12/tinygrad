@@ -20,7 +20,7 @@ import colorama
 import shutil
 # import pickle
 import os
-from tinygrad.nn.state import get_parameters
+from tinygrad.nn.state import get_parameters, get_state_dict
 
 from utils import Logger, load_config, seed_np#, seed_np_torch
 from replay_buffer import ReplayBuffer
@@ -214,11 +214,17 @@ def build_world_model(conf, action_dim):
         transformer_num_layers=conf.Models.WorldModel.TransformerNumLayers,
         transformer_num_heads=conf.Models.WorldModel.TransformerNumHeads
     )#.cuda()
+    d = get_state_dict(w)
+    for k in d:
+        # print(k)
+        # for s in d[k].shape:
+        #     print(s, type(s)) 
+        d[k] = d[k].realize()
     # for p in get_parameters(w):
-    #     temp = tuple(int(x) for x in p.shape) 
-    #     p = p.reshape(temp)
+    #     # temp = tuple(int(x) for x in p.shape) 
+    #     # p = p.reshape(temp)
     #     print(p.dtype, p.shape, p.device)
-    #     for s in temp:
+    #     for s in p.shape:
     #         print(s, type(s))
     #     # p.assign(p.float())#(dtypes.float32)
     #     p.realize()
@@ -236,8 +242,14 @@ def build_agent(conf, action_dim):
         lambd=conf.Models.Agent.Lambda,
         entropy_coef=conf.Models.Agent.EntropyCoef,
     )#.cuda()
+    d = get_state_dict(a)
+    for k in d:
+        # print(k)
+        # for s in d[k].shape:
+        #     print(s, type(s)) 
+        d[k] = d[k].realize()
     # for p in get_parameters(w): p.realize()
-    for p in get_parameters(a): print(p.dtype, p.shape, p.device)
+    # for p in get_parameters(a): print(p.dtype, p.shape, p.device)
     return a
 
 

@@ -9,9 +9,9 @@ import tinygrad
 # import torch.distributions as distributions
 import distributions
 # from einops import rearrange, repeat
-from einops.layers.torch import Rearrange
+# from einops.layers.torch import Rearrange
 import copy
-from torch.cuda.amp import autocast
+# from torch.cuda.amp import autocast
 
 from sub_models.functions_losses import SymLogTwoHotLoss
 from utils import EMAScalar
@@ -72,7 +72,7 @@ class ActorCriticAgent:
                 # nn.ReLU()
                 Tensor.relu
             ])
-        actor.append(nn.Linear(hidden_dim, action_dim))
+        actor.append(nn.Linear(hidden_dim, int(action_dim)))
         
         # self.actor = Tensor.sequential(
         #     actor,

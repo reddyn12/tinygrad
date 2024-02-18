@@ -1,6 +1,6 @@
-import torch
-import torch.nn as tnn
-import torch.nn.functional as F
+# import torch
+# import torch.nn as tnn
+# import torch.nn.functional as F
 
 from tinygrad import Tensor, dtypes, nn
 import tinygrad
@@ -129,7 +129,7 @@ class DecoderBN:
         self.backbone = backbone
         # self.backbone = nn.Sequential(*backbone)
         # self.backbone = Tensor.sequential(backbone)
-    def forward(self, sample):
+    def forward(self, sample:Tensor):
         batch_size = sample.shape[0]
         # obs_hat = self.backbone(sample)
         obs_hat = sample.sequential(self.backbone)
@@ -190,10 +190,12 @@ class RewardDecoder:
         ]
         self.head = nn.Linear(transformer_hidden_dim, num_classes)
 
-    def forward(self, feat):
+    def forward(self, feat:Tensor):
         feat = feat.sequential(self.backbone)
         reward = self.head(feat)
         return reward
+    def __call__(self, feat):
+        return self.forward(feat)
 
 
 class TerminationDecoder:
@@ -219,7 +221,8 @@ class TerminationDecoder:
         termination = feat.sequential(self.head)
         termination = termination.squeeze(-1)  # remove last 1 dim
         return termination
-
+    def __call__(self, feat):
+        return self.forward(feat)
 
 class MSELoss:
     def __init__(self) -> None:
@@ -231,6 +234,8 @@ class MSELoss:
         # loss = reduce(loss, "B L C H W -> B L", "sum")
         loss = loss.sum(-1).sum(-1).sum(-1)
         return loss.mean()
+    def __call__(self, obs_hat, obs):
+        return self.forward(obs_hat, obs)
 
 
 class CategoricalKLDivLossWithFreeBits:

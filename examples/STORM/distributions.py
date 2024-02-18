@@ -77,6 +77,10 @@ class Categorical(Distribution):
         return self.probs.argmax(axis=-1)
 
     def sample(self, sample_shape=()):
+        s = numel(sample_shape)
+        print('DIST_ SAMPLE HITT')
+        print(type(s), s)
+        
         probs_2d = self.probs.reshape(-1, self._num_events)
         samples_2d = Tensor.multinomial(probs_2d, numel(sample_shape), True).T
         output_shape = sample_shape + self._batch_shape

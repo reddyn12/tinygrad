@@ -2,6 +2,7 @@
 # import torch.nn as nn
 # import torch.nn.functional as F
 
+from typing import Any
 from tinygrad import Tensor, dtypes, nn
 import tinygrad
 
@@ -164,15 +165,18 @@ class PositionalEncoding1D:
     ):
         self.max_length = max_length
         self.embed_dim = embed_dim
-
-        self.pos_emb = nn.Embedding(self.max_length, embed_dim)
+        
+        print('posEncINIT',self.max_length, self.embed_dim)
+        self.pos_emb = nn.Embedding(int(self.max_length), int(embed_dim))
 
     def forward(self, feat:Tensor):
         # pos_emb = self.pos_emb(torch.arange(self.max_length, device=feat.device))
-        pos_emb = self.pos_emb(Tensor.arange(self.max_length, device=feat.device))
+        # a = Tensor.arange(self.max_length).reshape(self.max_length, 1)
+        # print('PosEncoding1D', self.max_length, a, a.shape)
+        pos_emb = self.pos_emb(Tensor.arange(self.max_length).reshape(self.max_length, 1))
 
         # pos_emb = repeat(pos_emb, "L D -> B L D", B=feat.shape[0])
-        pos_emb = pos_emb.repeat(feat.shape[0], 1, 1)
+        pos_emb = pos_emb.repeat((feat.shape[0], 1, 1))#.realize()
 
         feat = feat + pos_emb[:, :feat.shape[1], :]
         return feat
@@ -187,3 +191,5 @@ class PositionalEncoding1D:
 
         feat = feat + pos_emb[:, position:position+1, :]
         return feat
+    def __call__(self,feat:Tensor):
+        return self.forward(feat)
