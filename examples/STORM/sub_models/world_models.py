@@ -449,6 +449,7 @@ class WorldModel:
 
     def update(self, obs, action, reward, termination, logger=None):
         # self.train()
+        Tensor.no_grad = False
         batch_size, batch_length = obs.shape[:2]
 
         # with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=self.use_amp):
@@ -462,7 +463,7 @@ class WorldModel:
         obs_hat = self.image_decoder(flattened_sample)
 
         # transformer
-        temporal_mask = get_subsequent_mask_with_batch_length(batch_length, flattened_sample.device).realize()
+        temporal_mask = get_subsequent_mask_with_batch_length(batch_length, flattened_sample.device)#.realize()
         dist_feat = self.storm_transformer(flattened_sample, action, temporal_mask)
         prior_logits = self.dist_head.forward_prior(dist_feat)
         # decoding reward and termination with dist_feat
@@ -477,8 +478,8 @@ class WorldModel:
         dynamics_loss, dynamics_real_kl_div = self.categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
         representation_loss, representation_real_kl_div = self.categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())
         total_loss = reconstruction_loss + reward_loss + termination_loss + 0.5*dynamics_loss + 0.1*representation_loss
-        # total_loss.requires_grad = True
-        # print('TOTAL_LOSS:', total_loss, total_loss.shape)
+        # total_loss = Tensor((reconstruction_loss + reward_loss + termination_loss + 0.5*dynamics_loss + 0.1*representation_loss).numpy(), requires_grad=True)
+        print('TOTAL_LOSS:', total_loss, total_loss.shape, total_loss.numpy())
         # # gradient descent
         # self.scaler.scale(total_loss).backward()
         # self.scaler.unscale_(self.optimizer)  # for clip grad
@@ -489,16 +490,16 @@ class WorldModel:
 
         # NEW gradient descent
        
-        # total_loss.backward()
-        # # Add clip gradient norm
-        # max_norm = 1000.0
-        # for p in get_parameters(self):
-        #     grad_norm = p.grad.normal()
-        #     if grad_norm > max_norm:
-        #         p.grad = p.grad * (max_norm / grad_norm)
+        total_loss.backward()
+        # Add clip gradient norm
+        max_norm = 1000.0
+        for p in get_parameters(self):
+            grad_norm = p.grad.normal()
+            if grad_norm > max_norm:
+                p.grad = p.grad * (max_norm / grad_norm)
         
-        # self.optimizer.step()
-        # self.optimizer.zero_grad()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
         if logger is not None:
             logger.log("WorldModel/reconstruction_loss", reconstruction_loss.item())
             logger.log("WorldModel/reward_loss", reward_loss.item())
