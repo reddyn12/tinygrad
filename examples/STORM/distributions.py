@@ -77,9 +77,9 @@ class Categorical(Distribution):
         return self.probs.argmax(axis=-1)
 
     def sample(self, sample_shape=()):
-        s = numel(sample_shape)
-        print('DIST_ SAMPLE HITT')
-        print(type(s), s)
+        # s = numel(sample_shape)
+        # print('DIST_ SAMPLE HITT')
+        # print(type(s), s)
         
         probs_2d = self.probs.reshape(-1, self._num_events)
         samples_2d = Tensor.multinomial(probs_2d, numel(sample_shape), True).T
@@ -92,7 +92,9 @@ class Categorical(Distribution):
         return -p_log_p.sum(-1)
 
     def log_prob(self, value):
-        value = value.cast(dtypes.int32).unsqueeze(-1)
+        # IDK why this in here in the first place
+        # value = value.cast(dtypes.int32).unsqueeze(-1)
+
         # Tensor.gather uses mlops.Eq, which does not support backward() yet
         # return self.logits.gather(value, dim=-1).squeeze(-1)
         value = Tensor.one_hot(value, self._num_events)

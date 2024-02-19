@@ -48,15 +48,18 @@ class ScaledDotProductAttention:
         if mask is not None:
             # IMPLEMENTTHISSSSSSSSSs
             # attn = attn.masked_fill(mask == 0, -1e9)
-            attn_mask = (mask == 0).where(-float("inf"), 0)
+            # attn_mask = (mask == 0).where(-float("inf"), 0)
+            attn_mask = (mask == 0).where(-1e9, 0)
             attn = attn + attn_mask
 
         # attn = self.dropout(F.softmax(attn, dim=-1))
-        attn = attn.softmax(dim=-1).dropout(self.dropoutVal)
+        attn = attn.softmax(axis=-1).dropout(self.dropoutVal)
         # output = torch.matmul(attn, v)
         output = Tensor.matmul(attn, v)
 
         return output, attn
+    def __call__(self, q, k, v, mask=None):
+        return self.forward(q, k, v, mask=mask)
 
 
 class MultiHeadAttention:
@@ -78,7 +81,7 @@ class MultiHeadAttention:
         self.dropoutVal = dropout
         self.layer_norm = nn.LayerNorm(d_model, eps=1e-6)
 
-    def forward(self, q, k, v, mask=None):
+    def forward(self, q:Tensor, k, v, mask=None):
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
         # sz_b, len_q, len_k, len_v = q.size(0), q.size(1), k.size(1), v.size(1)
         sz_b, len_q, len_k, len_v = q.shape[0], q.shape[1], k.shape[1], v.shape[1]
@@ -87,9 +90,10 @@ class MultiHeadAttention:
 
         # Pass through the pre-attention projection: b x lq x (n*dv)
         # Separate different heads: b x lq x n x dv
-        q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
-        k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
-        v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
+        # print('SHAPEEE:', self.w_qs(q).shape)
+        q = self.w_qs(q).reshape((sz_b, len_q, n_head, d_k))
+        k = self.w_ks(k).reshape((sz_b, len_k, n_head, d_k))
+        v = self.w_vs(v).reshape((sz_b, len_v, n_head, d_v))
 
         # Transpose for attention dot product: b x n x lq x dv
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
@@ -101,14 +105,17 @@ class MultiHeadAttention:
 
         # Transpose to move the head dimension back: b x lq x n x dv
         # Combine the last two dimensions to concatenate all the heads together: b x lq x (n*dv)
-        q = q.transpose(1, 2).contiguous().view(sz_b, len_q, -1)
+        q = q.transpose(1, 2).contiguous().reshape((sz_b, len_q, -1))
         # q = self.dropout(self.fc(q))
         q = self.fc(q).dropout(self.dropoutVal)
-        q += residual
+        residual.requires_grad = False
+        q = q +residual
 
         q = self.layer_norm(q)
 
         return q, attn
+    def __call__(self, q, k, v, mask=None):
+        return self.forward(q, k, v, mask=mask)
 
 
 class PositionwiseFeedForward:
@@ -123,15 +130,18 @@ class PositionwiseFeedForward:
     def forward(self, x):
 
         residual = x
+        residual.requires_grad = False
 
         # x = self.w_2(F.relu(self.w_1(x)))
         x = self.w_2(self.w_1(x).relu())
         x = x.dropout(self.dropoutVal)
-        x += residual
+        x = x+ residual
 
         x = self.layer_norm(x)
 
         return x
+    def __call__(self, x):
+        return self.forward(x)
 
 
 class AttentionBlock:
@@ -144,6 +154,8 @@ class AttentionBlock:
             enc_input, enc_input, enc_input, mask=slf_attn_mask)
         enc_output = self.pos_ffn(enc_output)
         return enc_output, enc_slf_attn
+    def __call__(self, enc_input, slf_attn_mask=None):
+        return self.forward(enc_input, slf_attn_mask)
 
 
 class AttentionBlockKVCache:
@@ -155,6 +167,8 @@ class AttentionBlockKVCache:
         output, attn = self.slf_attn(q, k, v, mask=slf_attn_mask)
         output = self.pos_ffn(output)
         return output, attn
+    def __call__(self, q, k, v, slf_attn_mask=None):
+        return self.forward(q, k, v, slf_attn_mask)
 
 
 class PositionalEncoding1D:
@@ -166,28 +180,31 @@ class PositionalEncoding1D:
         self.max_length = max_length
         self.embed_dim = embed_dim
         
-        print('posEncINIT',self.max_length, self.embed_dim)
+        # print('posEncINIT',self.max_length, self.embed_dim)
         self.pos_emb = nn.Embedding(int(self.max_length), int(embed_dim))
 
     def forward(self, feat:Tensor):
         # pos_emb = self.pos_emb(torch.arange(self.max_length, device=feat.device))
         # a = Tensor.arange(self.max_length).reshape(self.max_length, 1)
         # print('PosEncoding1D', self.max_length, a, a.shape)
-        pos_emb = self.pos_emb(Tensor.arange(self.max_length).reshape(self.max_length, 1))
 
+        # reshpae done to remove np.int64 shape
+        pos_emb = self.pos_emb(Tensor.arange(self.max_length).reshape(self.max_length, 1)).squeeze()
+        
+        # print('pre',feat.shape, pos_emb.shape)
         # pos_emb = repeat(pos_emb, "L D -> B L D", B=feat.shape[0])
         pos_emb = pos_emb.repeat((feat.shape[0], 1, 1))#.realize()
-
+        # print('post',feat.shape, pos_emb.shape)
         feat = feat + pos_emb[:, :feat.shape[1], :]
         return feat
 
     def forward_with_position(self, feat:Tensor, position):
         assert feat.shape[1] == 1
         # pos_emb = self.pos_emb(torch.arange(self.max_length, device=feat.device))
-        pos_emb = self.pos_emb(Tensor.arange(self.max_length, device=feat.device))
-
+        # pos_emb = self.pos_emb(Tensor.arange(self.max_length, device=feat.device))
+        pos_emb = self.pos_emb(Tensor.arange(self.max_length).reshape(self.max_length, 1)).squeeze()
         # pos_emb = repeat(pos_emb, "L D -> B L D", B=feat.shape[0])
-        pos_emb = pos_emb.repeat(feat.shape[0], 1, 1)
+        pos_emb = pos_emb.repeat((feat.shape[0], 1, 1))
 
         feat = feat + pos_emb[:, position:position+1, :]
         return feat

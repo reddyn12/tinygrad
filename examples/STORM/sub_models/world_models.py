@@ -255,6 +255,8 @@ class CategoricalKLDivLossWithFreeBits:
         # kl_div = torch.max(torch.ones_like(kl_div)*self.free_bits, kl_div)
         kl_div = Tensor.max(Tensor.ones_like(kl_div)*self.free_bits, kl_div)
         return kl_div, real_kl_div
+    def __call__(self, p_logits, q_logits):
+        return self.forward(p_logits, q_logits)
 
 
 class WorldModel:
@@ -265,7 +267,7 @@ class WorldModel:
         self.final_feature_width = 4
         self.stoch_dim = 32
         self.stoch_flattened_dim = self.stoch_dim*self.stoch_dim
-        self.use_amp = True
+        self.use_amp = False
         # self.tensor_dtype = torch.bfloat16 if self.use_amp else torch.float32
         self.tensor_dtype = dtypes.bfloat16 if self.use_amp else dtypes.float32
         self.imagine_batch_size = -1
@@ -412,17 +414,24 @@ class WorldModel:
                 sample_action[:, i:i+1],
                 log_video=log_video
             )
+        last_latent.requires_grad = False
+        last_dist_feat.requires_grad = False
         self.latent_buffer[:, 0:1] = last_latent
         self.hidden_buffer[:, 0:1] = last_dist_feat
 
         # imagine
         for i in range(imagine_batch_length):
             # action = agent.sample(torch.cat([self.latent_buffer[:, i:i+1], self.hidden_buffer[:, i:i+1]], dim=-1))
-            action = agent.sample(Tensor.cat([self.latent_buffer[:, i:i+1], self.hidden_buffer[:, i:i+1]], dim=-1))
+            action = agent.sample(Tensor.cat(*[self.latent_buffer[:, i:i+1], self.hidden_buffer[:, i:i+1]], dim=-1))
+            action.requires_grad = False
             self.action_buffer[:, i:i+1] = action
 
             last_obs_hat, last_reward_hat, last_termination_hat, last_latent, last_dist_feat = self.predict_next(
                 self.latent_buffer[:, i:i+1], self.action_buffer[:, i:i+1], log_video=log_video)
+            last_latent.requires_grad = False
+            last_dist_feat.requires_grad = False
+            last_reward_hat.requires_grad = False
+            last_termination_hat.requires_grad = False
 
             self.latent_buffer[:, i+1:i+2] = last_latent
             self.hidden_buffer[:, i+1:i+2] = last_dist_feat
@@ -436,7 +445,7 @@ class WorldModel:
             logger.log("Imagine/predict_video", Tensor.clip(Tensor.cat(obs_hat_list, dim=1), 0., 1.).float().detach().numpy())
 
         # return torch.cat([self.latent_buffer, self.hidden_buffer], dim=-1), self.action_buffer, self.reward_hat_buffer, self.termination_hat_buffer
-        return Tensor.cat([self.latent_buffer, self.hidden_buffer], dim=-1), self.action_buffer, self.reward_hat_buffer, self.termination_hat_buffer
+        return Tensor.cat(*[self.latent_buffer, self.hidden_buffer], dim=-1), self.action_buffer, self.reward_hat_buffer, self.termination_hat_buffer
 
     def update(self, obs, action, reward, termination, logger=None):
         # self.train()
@@ -468,7 +477,8 @@ class WorldModel:
         dynamics_loss, dynamics_real_kl_div = self.categorical_kl_div_loss(post_logits[:, 1:].detach(), prior_logits[:, :-1])
         representation_loss, representation_real_kl_div = self.categorical_kl_div_loss(post_logits[:, 1:], prior_logits[:, :-1].detach())
         total_loss = reconstruction_loss + reward_loss + termination_loss + 0.5*dynamics_loss + 0.1*representation_loss
-
+        # total_loss.requires_grad = True
+        # print('TOTAL_LOSS:', total_loss, total_loss.shape)
         # # gradient descent
         # self.scaler.scale(total_loss).backward()
         # self.scaler.unscale_(self.optimizer)  # for clip grad
@@ -478,16 +488,17 @@ class WorldModel:
         # self.optimizer.zero_grad(set_to_none=True)
 
         # NEW gradient descent
-        self.optimizer.zero_grad()
-        total_loss.backward()
-        # Add clip gradient norm
-        max_norm = 1000.0
-        for p in get_parameters(self):
-            grad_norm = p.grad.normal()
-            if grad_norm > max_norm:
-                p.grad = p.grad * (max_norm / grad_norm)
+       
+        # total_loss.backward()
+        # # Add clip gradient norm
+        # max_norm = 1000.0
+        # for p in get_parameters(self):
+        #     grad_norm = p.grad.normal()
+        #     if grad_norm > max_norm:
+        #         p.grad = p.grad * (max_norm / grad_norm)
         
-        self.optimizer.step()
+        # self.optimizer.step()
+        # self.optimizer.zero_grad()
         if logger is not None:
             logger.log("WorldModel/reconstruction_loss", reconstruction_loss.item())
             logger.log("WorldModel/reward_loss", reward_loss.item())

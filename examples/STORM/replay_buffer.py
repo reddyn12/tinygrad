@@ -54,7 +54,7 @@ class ReplayBuffer():
             # termination = torch.stack([self.external_buffer["done"][idx:idx+batch_length] for idx in indexes])
             termination = Tensor.stack([self.external_buffer["done"][idx:idx+batch_length] for idx in indexes])
         else:
-            print('SMAPLE_EXTERNAL HIT')
+            # print('SMAPLE_EXTERNAL HIT')
             obs = np.stack([self.external_buffer["obs"][idx:idx+batch_length] for idx in indexes])
             action = np.stack([self.external_buffer["action"][idx:idx+batch_length] for idx in indexes])
             reward = np.stack([self.external_buffer["reward"][idx:idx+batch_length] for idx in indexes])
@@ -81,7 +81,7 @@ class ReplayBuffer():
                     termination.append(Tensor.stack([self.termination_buffer[idx:idx+batch_length, i] for idx in indexes]))
 
             if self.external_buffer_length is not None and external_batch_size > 0:
-                print('Sample SUB exernal_sample')
+                # print('Sample SUB exernal_sample')
                 external_obs, external_action, external_reward, external_termination = self.sample_external(
                     external_batch_size, batch_length, to_device)
                 obs.append(external_obs)

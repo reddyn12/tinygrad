@@ -20,10 +20,10 @@ from utils import EMAScalar
 def percentile(x:Tensor, percentage):
     # flat_x = torch.flatten(x)
     flat_x = x.flatten()
-    kth = int(percentage*len(flat_x)) # maybe can do flat_x[kth-1]
+    kth = int(percentage*flat_x.shape[0]) # maybe can do flat_x[kth-1]
     # per = torch.kthvalue(flat_x, kth).values
-    sorted_x = np.sort(flat_x.cpu().data)
-    per = Tensor(sorted_x[kth])
+    sorted_x = np.sort(flat_x.numpy())
+    per = Tensor([sorted_x[kth]])
     # import sys
     # print('percentile',per, per.dtype)
     # sys.exit()
@@ -38,6 +38,7 @@ def calc_lambda_return(rewards, values, termination, gamma, lam, dtype=dtypes.fl
     # gae_step = torch.zeros((batch_size, ), dtype=dtype, device="cuda")
     # gamma_return = torch.zeros((batch_size, batch_length+1), dtype=dtype, device="cuda")
     gamma_return = Tensor.zeros((batch_size, batch_length+1), dtype=dtype)
+    values.requires_grad = False
     gamma_return[:, -1] = values[:, -1]
     for t in reversed(range(batch_length)):  # with last bootstrap
         gamma_return[:, t] = \
@@ -53,7 +54,7 @@ class ActorCriticAgent:
         self.gamma = gamma
         self.lambd = lambd
         self.entropy_coef = entropy_coef
-        self.use_amp = True
+        self.use_amp = False
         # self.tensor_dtype = torch.bfloat16 if self.use_amp else torch.float32
         self.tensor_dtype = dtypes.bfloat16 if self.use_amp else dtypes.float32
 
@@ -127,14 +128,14 @@ class ActorCriticAgent:
     # @torch.no_grad()
     def slow_value(self, x):
         # value = self.slow_critic(x)
-        value = x.seqential(self.slow_critic)
+        value = x.sequential(self.slow_critic)
         value = self.symlog_twohot_loss.decode(value)
         return value
 
     def get_logits_raw_value(self, x):
         # logits = self.actor(x)
-        logits = x.seqential(self.actor)
-        raw_value = self.critic(x)
+        logits = x.sequential(self.actor)
+        raw_value = x.sequential(self.critic)
         return logits, raw_value
 
     # @torch.no_grad()
@@ -197,19 +198,19 @@ class ActorCriticAgent:
         
         
         # NEW gradient descent
-        self.optimizer.zero_grad()
-        loss.backward()
-        # Add clip gradient norm
-        max_norm = 100.0
-        for p in get_parameters(self):
-            grad_norm = p.grad.normal()
-            if grad_norm > max_norm:
-                p.grad = p.grad * (max_norm / grad_norm)
+        # self.optimizer.zero_grad()
+        # loss.backward()
+        # # Add clip gradient norm
+        # max_norm = 100.0
+        # for p in get_parameters(self):
+        #     grad_norm = p.grad.normal()
+        #     if grad_norm > max_norm:
+        #         p.grad = p.grad * (max_norm / grad_norm)
         
-        self.optimizer.step()
+        # self.optimizer.step()
         
 
-        self.update_slow_critic()
+        # self.update_slow_critic()
 
         if logger is not None:
             logger.log('ActorCritic/policy_loss', policy_loss.item())

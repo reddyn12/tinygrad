@@ -59,23 +59,25 @@ class SymLogTwoHotLoss:
         # weight = torch.clamp(weight, 0, 1)
         # weight = weight.unsqueeze(-1)
         
-        index = np.digitize(target, self.bins)
-        diff = target - self.bins[index-1]  # -1 to get the lower bound
+        index = np.digitize(target, self.bins.numpy())
+        diff = target - self.bins.numpy()[index-1]  # -1 to get the lower bound
         weight = diff / self.bin_length
         weight = weight.clip(0, 1)
         weight = weight.unsqueeze(-1)
 
         # target_prob = (1-weight)*F.one_hot(index-1, self.num_classes) + weight*F.one_hot(index, self.num_classes)
-        target_prob = (1-weight)*(index-1).one_hot(self.num_classes) + weight*index.one_hot(self.num_classes)
+        target_prob = (1-weight)*Tensor([index-1],dtype=dtypes.int).one_hot(self.num_classes) + weight*Tensor([index],dtype=dtypes.int).one_hot(self.num_classes)
 
         # loss = -target_prob * F.log_softmax(output, dim=-1)
         loss = -target_prob * output.log_softmax(axis=-1)
-        loss = loss.sum(dim=-1)
+        loss = loss.sum(axis=-1)
         return loss.mean()
 
     def decode(self, output:Tensor):
         # return symexp(F.softmax(output, dim=-1) @ self.bins)
         return symexp(output.softmax(axis=-1) @ self.bins)
+    def __call__(self, output:Tensor, target:Tensor):
+        return self.forward(output, target)
 
 
 if __name__ == "__main__":

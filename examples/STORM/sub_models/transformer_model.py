@@ -101,14 +101,14 @@ class StochasticTransformerKVCache:
         # action = F.one_hot(action.long(), self.action_dim).float()
         # action = action.cast(dtypes.long).one_hot(self.action_dim).float()
         # print(action.numpy())
-        print(action.shape,action.dtype)
+        # print(action.shape,action.dtype)
         
         # print(self.action_dim)
         # action = action.realize()
         action = action.one_hot(self.action_dim).float()
-        print('action one hot:', action.shape,action.dtype)
-        for s in action.shape:
-            print(s, type(s))
+        # print('action one hot:', action.shape,action.dtype)
+        # for s in action.shape:
+        #     print(s, type(s))
         # feats = self.stem(torch.cat([samples, action], dim=-1))
         # feats = self.stem(Tensor.cat([samples, action], dim=-1))
         feats = Tensor.cat(*[samples, action], dim=-1).sequential(self.stem)
@@ -141,13 +141,13 @@ class StochasticTransformerKVCache:
         # action = F.one_hot(action.long(), self.action_dim).float()
         action = action.cast(dtypes.long).one_hot(self.action_dim).float()
         # feats = self.stem(torch.cat([samples, action], dim=-1))
-        feats = self.stem(Tensor.cat([samples, action], dim=-1))
+        feats = Tensor.cat(*[samples, action], dim=-1).sequential(self.stem)
         feats = self.position_encoding.forward_with_position(feats, position=self.kv_cache_list[0].shape[1])
         feats = self.layer_norm(feats)
 
         for idx, layer in enumerate(self.layer_stack):
             # self.kv_cache_list[idx] = torch.cat([self.kv_cache_list[idx], feats], dim=1)
-            self.kv_cache_list[idx] = Tensor.cat([self.kv_cache_list[idx], feats], dim=1)
+            self.kv_cache_list[idx] = Tensor.cat(*[self.kv_cache_list[idx], feats], dim=1)
             feats, attn = layer(feats, self.kv_cache_list[idx], self.kv_cache_list[idx], mask)
 
         return feats

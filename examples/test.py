@@ -3,12 +3,29 @@ from einops import rearrange, repeat, reduce
 import numpy as np
 import torch
 
+# t1 = torch.ones(3,5)
+# t2 = Tensor.ones(3,5)
+# o1 = repeat(t1, 'L D -> B L D', B=10)
+# o2 = t2.repeat((10,1,1))
+
+# print(o1.shape, o2.shape)
+
+# t1 = torch.ones(16,64,512)
+# t11 = torch.ones(16,64,512)
+# t2 = Tensor.ones(16,64,512)
+# t22 = Tensor.ones(16,64,512)
+
+# o1 = t1 + t11[:,:t1.shape[1], :]
+# o2 = t2 + t22[:,:t2.shape[1], :]
+
+# print(o1.shape, o2.shape)
+
 t1 = torch.arange(64)
-t2 = Tensor.arange(64)
+t2 = Tensor.arange(64).reshape(64,1)
 p1 = torch.nn.Embedding(64,512)
 p2 = nn.Embedding(64,512)
-print(p1(t1))
-print(p2(t2).numpy())
+print(p1(t1).shape)
+print(p2(t2).squeeze().shape)
 
 # r = Tensor.ones(16,64)
 # r= r.one_hot(9).float()

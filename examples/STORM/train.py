@@ -51,7 +51,7 @@ def build_vec_env(env_name, image_size, num_envs, seed):
 
 def train_world_model_step(replay_buffer: ReplayBuffer, world_model: WorldModel, batch_size, demonstration_batch_size, batch_length, logger):
     obs, action, reward, termination = replay_buffer.sample(batch_size, demonstration_batch_size, batch_length)
-    print(obs.shape, action.shape, reward.shape, termination.shape)
+    # print(obs.shape, action.shape, reward.shape, termination.shape)
     world_model.update(obs, action, reward, termination, logger=logger)
 
 
@@ -117,7 +117,8 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
                 # context_latent = world_model.encode_obs(torch.cat(list(context_obs), dim=1))
                 context_latent = world_model.encode_obs(Tensor.cat(*list(context_obs), dim=1))
                 # model_context_action = np.stack(list(context_action), axis=1)
-                model_context_action = Tensor.stack(*list(context_action), axis=1)
+                # model_context_action = Tensor.stack(list(context_action), dim=1)
+                model_context_action = np.stack(list(context_action), axis=1)
                 # model_context_action = torch.Tensor(model_context_action).cuda()
                 model_context_action = Tensor(model_context_action)
                 prior_flattened_sample, last_dist_feat = world_model.calc_last_dist_feat(context_latent, model_context_action)
@@ -126,6 +127,9 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
                     Tensor.cat(*[prior_flattened_sample, last_dist_feat], dim=-1),
                     greedy=False
                 )
+            if isinstance(action[0], np.ndarray):
+                action = action[0]
+            # print('action_appenf;', action.shape, action.dtype, type(action), action)
 
             # context_obs.append(rearrange(torch.Tensor(current_obs).cuda(), "B H W C -> B 1 C H W")/255)
             tempTens = Tensor(current_obs).permute(0, 3, 1, 2)
@@ -134,7 +138,10 @@ def joint_train_world_model_agent(env_name, max_steps, num_envs, image_size,
             context_action.append(action)
         else:
             action = vec_env.action_space.sample()
-
+        # print('action:', action.shape, action.dtype, type(action), action)
+        if isinstance(action[0], np.ndarray):
+            action = action[0]
+        
         obs, reward, done, truncated, info = vec_env.step(action)
         replay_buffer.append(current_obs, action, reward, np.logical_or(done, info["life_loss"]))
 
@@ -219,6 +226,7 @@ def build_world_model(conf, action_dim):
         # print(k)
         # for s in d[k].shape:
         #     print(s, type(s)) 
+        # d[k].requires_grad = True
         d[k] = d[k].realize()
     # for p in get_parameters(w):
     #     # temp = tuple(int(x) for x in p.shape) 
@@ -247,6 +255,7 @@ def build_agent(conf, action_dim):
         # print(k)
         # for s in d[k].shape:
         #     print(s, type(s)) 
+        # d[k].requires_grad = True
         d[k] = d[k].realize()
     # for p in get_parameters(w): p.realize()
     # for p in get_parameters(a): print(p.dtype, p.shape, p.device)
@@ -304,27 +313,27 @@ if __name__ == "__main__":
             replay_buffer.load_trajectory(path=args.trajectory_path)
 
         # train
-        with Tensor.train():
-            joint_train_world_model_agent(
-                env_name=args.env_name,
-                num_envs=conf.JointTrainAgent.NumEnvs,
-                max_steps=conf.JointTrainAgent.SampleMaxSteps,
-                image_size=conf.BasicSettings.ImageSize,
-                replay_buffer=replay_buffer,
-                world_model=world_model,
-                agent=agent,
-                train_dynamics_every_steps=conf.JointTrainAgent.TrainDynamicsEverySteps,
-                train_agent_every_steps=conf.JointTrainAgent.TrainAgentEverySteps,
-                batch_size=conf.JointTrainAgent.BatchSize,
-                demonstration_batch_size=conf.JointTrainAgent.DemonstrationBatchSize if conf.JointTrainAgent.UseDemonstration else 0,
-                batch_length=conf.JointTrainAgent.BatchLength,
-                imagine_batch_size=conf.JointTrainAgent.ImagineBatchSize,
-                imagine_demonstration_batch_size=conf.JointTrainAgent.ImagineDemonstrationBatchSize if conf.JointTrainAgent.UseDemonstration else 0,
-                imagine_context_length=conf.JointTrainAgent.ImagineContextLength,
-                imagine_batch_length=conf.JointTrainAgent.ImagineBatchLength,
-                save_every_steps=conf.JointTrainAgent.SaveEverySteps,
-                seed=args.seed,
-                logger=logger
-            )
+        # with Tensor.train():
+        joint_train_world_model_agent(
+            env_name=args.env_name,
+            num_envs=conf.JointTrainAgent.NumEnvs,
+            max_steps=conf.JointTrainAgent.SampleMaxSteps,
+            image_size=conf.BasicSettings.ImageSize,
+            replay_buffer=replay_buffer,
+            world_model=world_model,
+            agent=agent,
+            train_dynamics_every_steps=conf.JointTrainAgent.TrainDynamicsEverySteps,
+            train_agent_every_steps=conf.JointTrainAgent.TrainAgentEverySteps,
+            batch_size=conf.JointTrainAgent.BatchSize,
+            demonstration_batch_size=conf.JointTrainAgent.DemonstrationBatchSize if conf.JointTrainAgent.UseDemonstration else 0,
+            batch_length=conf.JointTrainAgent.BatchLength,
+            imagine_batch_size=conf.JointTrainAgent.ImagineBatchSize,
+            imagine_demonstration_batch_size=conf.JointTrainAgent.ImagineDemonstrationBatchSize if conf.JointTrainAgent.UseDemonstration else 0,
+            imagine_context_length=conf.JointTrainAgent.ImagineContextLength,
+            imagine_batch_length=conf.JointTrainAgent.ImagineBatchLength,
+            save_every_steps=conf.JointTrainAgent.SaveEverySteps,
+            seed=args.seed,
+            logger=logger
+        )
     else:
         raise NotImplementedError(f"Task {conf.Task} not implemented")
