@@ -263,6 +263,7 @@ class WorldModel:
     def __init__(self, in_channels, action_dim,
                  transformer_max_length, transformer_hidden_dim, transformer_num_layers, transformer_num_heads):
         # super().__init__()
+        Tensor.no_grad = False
         self.transformer_hidden_dim = transformer_hidden_dim
         self.final_feature_width = 4
         self.stoch_dim = 32
@@ -489,7 +490,7 @@ class WorldModel:
         # self.optimizer.zero_grad(set_to_none=True)
 
         # NEW gradient descent
-       
+        total_loss.realize()
         total_loss.backward()
         # Add clip gradient norm
         max_norm = 1000.0
