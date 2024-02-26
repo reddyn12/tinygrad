@@ -3,6 +3,7 @@ import os
 import numpy as np
 import random
 from tensorboardX import SummaryWriter
+
 # from einops import repeat
 from tinygrad import Tensor
 from contextlib import contextmanager
@@ -10,14 +11,40 @@ import time
 import yacs
 from yacs.config import CfgNode as CN
 
-def cross_entropy(x:Tensor, y:Tensor, reduction:str='mean', label_smoothing:float=0.0) -> Tensor:
+
+def clip_grad_norm_(parameters, max_norm):
+    grads = [p.grad for p in parameters if p.grad is not None]
+    if len(grads) == 0:
+        return Tensor(0.0)
+
+    def l2_norm(x):
+        return Tensor.sqrt(Tensor.sum(Tensor.square(x)))
+
+    norms = [l2_norm(g) for g in grads]
+    total_norm = l2_norm(Tensor.stack(norms))
+    clip_coef = max_norm / (total_norm + 1e-6)
+    clip_coef = Tensor.maximum(clip_coef, 1.0)
+    for g in grads:
+        g *= clip_coef
+        g.realize()
+    return total_norm
+
+
+def cross_entropy(
+    x: Tensor, y: Tensor, reduction: str = "mean", label_smoothing: float = 0.0
+) -> Tensor:
     divisor = y.shape[1]
     assert isinstance(divisor, int), "only supported int divisor"
-    y = (1 - label_smoothing)*y + label_smoothing / divisor
+    y = (1 - label_smoothing) * y + label_smoothing / divisor
     ret = -x.log_softmax(axis=1).mul(y).sum(axis=1)
-    if reduction=='none': return ret
-    if reduction=='sum': return ret.sum()
-    if reduction=='mean': return ret.mean()
+    if reduction == "none":
+        return ret
+    if reduction == "sum":
+        return ret.sum()
+    if reduction == "mean":
+        return ret.mean()
+
+
 # def clip_grad_norm(parameters:[Tensor], max_norm, norm_type=2):
 #     total_norm = 0
 #     for p in parameters:
@@ -34,8 +61,12 @@ def _sum_rightmost(value, dim):
         return value
     required_shape = value.shape[:-dim] + (-1,)
     return value.reshape(required_shape).sum(-1)
+
+
 def numel(shape):
     return int(np.prod(shape)) if shape else 1
+
+
 # def seed_np_torch(seed=20001118):
 #     random.seed(seed)
 #     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -47,11 +78,14 @@ def numel(shape):
 #     torch.backends.cudnn.deterministic = True
 #     torch.backends.cudnn.benchmark = False
 
+
 def seed_np(seed=20001118):
     random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
-class Logger():
+
+
+class Logger:
     def __init__(self, path) -> None:
         self.writer = SummaryWriter(logdir=path, flush_secs=1)
         self.tag_step = {}
@@ -71,9 +105,9 @@ class Logger():
             self.writer.add_scalar(tag, value, self.tag_step[tag])
 
 
-class EMAScalar():
-    def __init__(self, decay) -> None:
-        self.scalar = 0.0
+class EMAScalar:
+    def __init__(self, decay: float) -> None:
+        self.scalar = Tensor(0.0)
         self.decay = decay
 
     def __call__(self, value):
@@ -81,7 +115,9 @@ class EMAScalar():
         return self.get()
 
     def update(self, value):
-        self.scalar = self.scalar * self.decay + value * (1 - self.decay)
+        self.scalar *= self.decay
+        self.scalar += value * (1 - self.decay)
+        self.scalar.realize()
 
     def get(self):
         return self.scalar

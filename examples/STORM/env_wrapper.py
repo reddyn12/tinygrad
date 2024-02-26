@@ -68,9 +68,11 @@ class MaxLast2FrameSkipWrapper(gymnasium.Wrapper):
             obs = np.max(np.stack(self.obs_buffer), axis=0)
         return obs, total_reward, done, truncated, info
 
+
 def build_single_env(env_name, image_size):
     env = gymnasium.make(env_name, full_action_space=True, frameskip=1)
     from gymnasium.wrappers import AtariPreprocessing
+
     env = AtariPreprocessing(env, screen_size=image_size, grayscale_obs=False)
     return env
 
@@ -81,16 +83,25 @@ def build_vec_env(env_list, image_size, num_envs):
     env_fns = []
     vec_env_names = []
     for env_name in env_list:
+
         def lambda_generator(env_name, image_size):
             return lambda: build_single_env(env_name, image_size)
-        env_fns += [lambda_generator(env_name, image_size) for i in range(num_envs//len(env_list))]
-        vec_env_names += [env_name for i in range(num_envs//len(env_list))]
+
+        env_fns += [
+            lambda_generator(env_name, image_size)
+            for i in range(num_envs // len(env_list))
+        ]
+        vec_env_names += [env_name for i in range(num_envs // len(env_list))]
     vec_env = gymnasium.vector.AsyncVectorEnv(env_fns=env_fns)
     return vec_env, vec_env_names
 
 
 if __name__ == "__main__":
-    vec_env, vec_env_names = build_vec_env(['ALE/Pong-v5', 'ALE/IceHockey-v5', 'ALE/Breakout-v5', 'ALE/Tennis-v5'], 64, num_envs=8)
+    vec_env, vec_env_names = build_vec_env(
+        ["ALE/Pong-v5", "ALE/IceHockey-v5", "ALE/Breakout-v5", "ALE/Tennis-v5"],
+        64,
+        num_envs=8,
+    )
     current_obs, _ = vec_env.reset()
     while True:
         action = vec_env.action_space.sample()
