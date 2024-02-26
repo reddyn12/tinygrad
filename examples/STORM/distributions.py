@@ -1,4 +1,4 @@
-from utils import _sum_rightmost, numel#, symexp, symlog
+from utils import _sum_rightmost, numel  # , symexp, symlog
 from sub_models.functions_losses import symexp, symlog
 from tinygrad import Tensor, dtypes
 
@@ -56,7 +56,9 @@ class SampleDist(Distribution):
 class Categorical(Distribution):
     def __init__(self, probs=None, logits=None):
         if (probs is None) == (logits is None):
-            raise ValueError("Either `probs` or `logits` must be specified, but not both.")
+            raise ValueError(
+                "Either `probs` or `logits` must be specified, but not both."
+            )
         if probs is not None:
             if len(probs.shape) < 1:
                 raise ValueError("`probs` parameter must be at least one-dimensional.")
@@ -80,7 +82,7 @@ class Categorical(Distribution):
         # s = numel(sample_shape)
         # print('DIST_ SAMPLE HITT')
         # print(type(s), s)
-        
+
         probs_2d = self.probs.reshape(-1, self._num_events)
         samples_2d = Tensor.multinomial(probs_2d, numel(sample_shape), True).T
         output_shape = sample_shape + self._batch_shape
@@ -112,7 +114,9 @@ class OneHotCategorical(Categorical):
 
     @property
     def mode(self):
-        _mode = Tensor.one_hot(Tensor.argmax(self.logits, axis=-1), self.logits.shape[-1])
+        _mode = Tensor.one_hot(
+            Tensor.argmax(self.logits, axis=-1), self.logits.shape[-1]
+        )
         return _mode.detach() + self.logits - self.logits.detach()
 
     def sample(self, sample_shape=()):
@@ -155,8 +159,12 @@ class DiscDist:
     def log_prob(self, x):
         x = self.transfwd(x)
         # x(time, batch, 1)
-        below = Tensor.sum((self.buckets <= x[..., None]).cast(dtypes.int32), axis=-1) - 1
-        above = self.num_buckets - Tensor.sum((self.buckets > x[..., None]).cast(dtypes.int32), axis=-1)
+        below = (
+            Tensor.sum((self.buckets <= x[..., None]).cast(dtypes.int32), axis=-1) - 1
+        )
+        above = self.num_buckets - Tensor.sum(
+            (self.buckets > x[..., None]).cast(dtypes.int32), axis=-1
+        )
         # this is implemented using clip at the original repo as the gradients are not backpropagated for the out of limits.
         below = Tensor.clip(below, 0, self.num_buckets - 1)
         above = Tensor.clip(above, 0, self.num_buckets - 1)
@@ -168,8 +176,10 @@ class DiscDist:
         weight_below = dist_to_above / total
         weight_above = dist_to_below / total
         target = (
-            Tensor.one_hot(below, num_classes=self.num_buckets) * weight_below[..., None]
-            + Tensor.one_hot(above, num_classes=self.num_buckets) * weight_above[..., None]
+            Tensor.one_hot(below, num_classes=self.num_buckets)
+            * weight_below[..., None]
+            + Tensor.one_hot(above, num_classes=self.num_buckets)
+            * weight_above[..., None]
         )
         log_pred = self.logits - self.logits.exp().sum(-1, keepdim=True).log()
         return (target * log_pred).sum(-1)
@@ -269,7 +279,9 @@ class ContDist:
 class Bernoulli(Distribution):
     def __init__(self, probs=None, logits=None):
         if (probs is None) == (logits is None):
-            raise ValueError("Either `probs` or `logits` must be specified, but not both.")
+            raise ValueError(
+                "Either `probs` or `logits` must be specified, but not both."
+            )
         if probs is not None:
             if not isinstance(probs, Tensor):
                 probs = Tensor(probs)
@@ -332,7 +344,10 @@ class Normal(Distribution):
         return self._loc + self._scale * Tensor.randn(sample_shape)
 
     def log_prob(self, event):
-        return -(Tensor.sqrt((event - self._loc) ** 2 + self._threshold**2) - self._threshold)
+        return -(
+            Tensor.sqrt((event - self._loc) ** 2 + self._threshold**2)
+            - self._threshold
+        )
 
 
 class SafeTruncatedNormal(Normal):
@@ -346,7 +361,9 @@ class SafeTruncatedNormal(Normal):
     def sample(self, sample_shape):
         event = super().sample(sample_shape)
         if self._clip:
-            clipped = Tensor.clip(event, self._low + self._clip, self._high - self._clip)
+            clipped = Tensor.clip(
+                event, self._low + self._clip, self._high - self._clip
+            )
             event = event - event.detach() + clipped.detach()
         if self._mult:
             event *= self._mult
