@@ -19,7 +19,7 @@ def exec_alu(arg, dtype, p):
   if arg == UnaryOps.EXP2:
     try: return math.exp(p[0]*math.log(2))
     except OverflowError: return math.inf
-  if arg == UnaryOps.SQRT: return math.sqrt(p[0]) if p[0] > 0 else math.nan
+  if arg == UnaryOps.SQRT: return math.sqrt(p[0]) if p[0] >= 0 else math.nan
   if arg == UnaryOps.SIN: return math.sin(p[0])
   if arg == UnaryOps.NEG: return -p[0]
   if arg == BinaryOps.MUL: return p[0]*p[1]
@@ -134,9 +134,9 @@ class PythonProgram:
               ul[i] = list(struct.unpack(unpack_format, struct.pack(pack_format, *inp[0])))
             else:
               casted = [float(x) if dtypes.is_float(dtype) else int(x) if dtypes.is_int(dtype) else x for x in inp[0]]
-              packed = struct.pack(pack_format if (dtypes.is_int(dtype) and dtypes.is_int(dtp[0]) and dtype.itemsize == dtp[0].itemsize)
-                                   else unpack_format, *casted)
-              ul[i] = list(struct.unpack(unpack_format, packed))
+              overflow_adjust = 2**(dtype.itemsize*8 - 1) if (dtypes.is_int(dtype) and not dtypes.is_unsigned(dtype)) else 0
+              overflow_fixed = [((x + overflow_adjust) % 2**(dtype.itemsize*8) - overflow_adjust) if dtypes.is_int(dtype) else x for x in casted]
+              ul[i] = list(struct.unpack(unpack_format, struct.pack(unpack_format, *overflow_fixed)))
         elif uop is UOps.LOAD:
           if isinstance(dtp[0], ImageDType):
             assert dtype.count == 4
