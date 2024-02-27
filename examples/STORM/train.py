@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from einops import rearrange
 
-from line_profiler import profile
+# from line_profiler import profile
 
 from tinygrad import Tensor
 from collections import deque
@@ -109,7 +109,7 @@ def world_model_imagine_data(
     )
 
 
-@profile
+# @profile
 def joint_train_world_model_agent(
     env_name,
     max_steps,
