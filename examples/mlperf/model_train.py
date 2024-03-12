@@ -44,7 +44,7 @@ def train_rnnt():
   output = output.realize()
   # loss, grad = loss_fn(output)
   losses, output.grad = loss_fn(output, y, x_len, y_len)
-  print(output.shape, output.grad, output.grad.shape)
+  print(output.shape, output.grad, output.grad.shape, losses)
   
   
 
