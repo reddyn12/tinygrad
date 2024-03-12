@@ -16,6 +16,7 @@ def train_unet3d():
 
 def train_rnnt():
   # TODO: RNN-T
+  from tinygrad import Device
   from extra.models import rnnt
   from extra.datasets.librispeech import tokenize_transcripts, iterate_new,iterate 
   from examples.mlperf.metrics import word_error_rate
@@ -27,6 +28,8 @@ def train_rnnt():
   model.load_from_pretrained()
   # loss_fn = rnnt.RNNT_LOSS
   loss_fn = rnnt.transduce_batch_helper
+  loss_TESTER = rnnt.RNNT_LOSS(Device.DEFAULT)
+
   tokenizer = rnnt.Tokenizer()
   optimizer = optim.LAMB(state.get_parameters(model))
   
@@ -46,25 +49,34 @@ def train_rnnt():
   print(x.shape, y.shape, x_len.shape, y_len.shape)
   output = model(x, y).log_softmax()
   output = output.realize()
+  # output.requires_grad = True
+  # loss_TESTER = rnnt.RNNT_LOSS(Device.DEFAULT, output)
+
   print('pre loss', output.shape)
   # loss, grad = loss_fn(output)
   # Tensor.no_grad = True
   # Tensor.requires_grad = False
   
   # output = Tensor.ones_like(output)
-  losses, grads = loss_fn(output, y, x_len, y_len)
-  losses_new = Tensor([i.numpy() for i in losses])
-  losses_new = losses_new.mean()
-  losses_new.grad = grads
-  print('NEW LOSSES',losses_new.shape, losses_new.grad)
-  losses_new.backward()
+  
+  loss_class = loss_TESTER(output, y)
+  print('LOSS_CLASS:', loss_class.shape, loss_class.numpy())
+  
+  
+  # losses, grads = loss_fn(output, y, x_len, y_len)
+  # losses_new = Tensor([i.numpy() for i in losses])
+  # losses_new = losses_new.mean()
+  # losses_new.grad = grads
+  # print('NEW LOSSES',losses_new.shape, losses_new.grad)
+  # losses_new.backward()
+  
   # losses = Tensor(losses)
   # losses.backward()
   # output.backward()
   # Tensor.requires_grad = True
-  print(output.shape, output.grad, grads.shape)
-  for i in losses:
-    print(i.numpy())
+  # print(output.shape, output.grad, grads.shape)
+  # for i in losses:
+  #   print(i.numpy())
   # print(output.grad.numpy())
   
   

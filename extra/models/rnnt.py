@@ -1,4 +1,4 @@
-from tinygrad.tensor import Tensor
+from tinygrad.tensor import Tensor, Function
 from tinygrad.features.jit import TinyJit
 from tinygrad.nn import Linear, Embedding
 from tinygrad.helpers import fetch
@@ -47,11 +47,14 @@ class Tokenizer:
 
 # https://assets.amazon.science/6e/5f/5ef4386f4e0d896d612284c9b9b6/efficient-minimum-word-error-rate-training-of-rnn-transducer-for-end-to-end-speech-recognition.pdf
 # https://github.com/HawkAaron/RNN-Transducer/blob/graves2013/rnnt_np.py
+# @TinyJit
 def logsumexp(x1:Tensor, x2:Tensor) -> Tensor:
+  # return (x1.exp() + x2.exp()).log()
   temp = (x1.exp() + x2.exp()).log()
   temp.requires_grad = False
   return temp
-def forward_pass(log_probs, labels, blank):
+# @TinyJit
+def forward_pass(log_probs, labels, blank=BLANK):
   T, U, _ = log_probs.shape
   # alphas = np.zeros((T, U))
   alphas = Tensor.zeros((T, U), requires_grad=False)
@@ -78,7 +81,7 @@ def forward_pass(log_probs, labels, blank):
   loglike = alphas[T-1, U-1] + log_probs[T-1, U-1, blank]
   return alphas, loglike
 
-def backward_pass(log_probs, labels, blank):
+def backward_pass(log_probs, labels, blank=BLANK):
 
   T, U, _ = log_probs.shape
   # betas = np.zeros((T, U))
@@ -163,9 +166,39 @@ def transduce_batch_helper(log_probs, labels, xlen, ylen, blank=BLANK):
     costs.append(ll)
   grads.realize()
   return costs, grads
-def RNNT_LOSS(output:Tensor) -> Tensor:
-  
-  return output
+class RNNT_LOSS(Function):
+  # @staticmethod
+  def forward(self, log_probs, labels):
+    print('LOSS_Forward:', log_probs.shape, labels.shape)
+    B, T, C, _ = log_probs.shape
+    # a = Tensor.empty((B,T,C), requires_grad=True)
+    
+    # l = Tensor.empty((B,), requires_grad=True)
+    a = [None]*B
+    l = [None]*B
+    for i in range(B):
+      
+      at,lt = forward_pass(log_probs[i], labels[i])
+      # at.realize()
+      # lt.realize()
+      # at.requires_grad=False
+      # lt.requires_grad=False
+      a[i], l[i] = at, lt
+   
+    a = Tensor.stack(a)
+    l = Tensor.stack(l)
+    # a,l = forward_pass(log_probs[0], labels[0])
+    
+    print('AAAAA:', a.shape)
+    
+    
+    return -l
+  # @staticmethod
+  def backward(self, log_probs, labels):
+    b,l = backward_pass(log_probs, labels)
+    return l
+  def __call__(self, log_probs, labels):
+    return self.forward(log_probs, labels)
 
 def train_epoch():
   pass
