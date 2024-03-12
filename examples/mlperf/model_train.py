@@ -43,8 +43,8 @@ def train_rnnt():
   output = model(x, y).log_softmax()
   output = output.realize()
   # loss, grad = loss_fn(output)
-  output.grad = loss_fn(output, y, x_len, y_len)
-  print(output.shape, output.grad, len(output.grad))
+  losses, output.grad = loss_fn(output, y, x_len, y_len)
+  print(output.shape, output.grad, output.grad.shape)
   
   
 
