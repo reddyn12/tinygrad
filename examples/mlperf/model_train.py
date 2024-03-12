@@ -52,12 +52,17 @@ def train_rnnt():
   # Tensor.requires_grad = False
   
   # output = Tensor.ones_like(output)
-  losses, output.grad = loss_fn(output, y, x_len, y_len)
+  losses, grads = loss_fn(output, y, x_len, y_len)
+  losses_new = Tensor([i.numpy() for i in losses])
+  losses_new = losses_new.mean()
+  losses_new.grad = grads
+  print('NEW LOSSES',losses_new.shape, losses_new.grad)
+  losses_new.backward()
   # losses = Tensor(losses)
   # losses.backward()
   # output.backward()
   # Tensor.requires_grad = True
-  print(output.shape, output.grad, output.grad.shape)
+  print(output.shape, output.grad, grads.shape)
   for i in losses:
     print(i.numpy())
   # print(output.grad.numpy())
