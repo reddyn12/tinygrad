@@ -156,8 +156,8 @@ def transduce_batch_helper(log_probs, labels, xlen, ylen, blank=BLANK):
     t = int(xlen[b].item())
     u = int(ylen[b].item()) + 1
     ll, g = transduce(log_probs[b, :t, :u, :], labels[b, :u-1], blank)
-    g.requires_grad = False
-    grads[b, :t, :u, :] = g
+    # g.requires_grad = False
+    grads[b, :t, :u, :] = g.numpy()
     # ll.requires_grad = False
     # costs[b] = ll
     costs.append(ll)
