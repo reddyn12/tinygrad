@@ -5,6 +5,210 @@ from tinygrad.helpers import fetch
 import numpy as np
 from pathlib import Path
 
+# https://assets.amazon.science/6e/5f/5ef4386f4e0d896d612284c9b9b6/efficient-minimum-word-error-rate-training-of-rnn-transducer-for-end-to-end-speech-recognition.pdf
+# https://github.com/HawkAaron/RNN-Transducer/blob/graves2013/rnnt_np.py
+def logsumexp(x1:Tensor, x2:Tensor) -> Tensor:
+  return (x1.exp() + x2.exp()).log()
+def forward_pass(log_probs, labels, blank):
+  T, U, _ = log_probs.shape
+  # alphas = np.zeros((T, U))
+  alphas = Tensor.zeros((T, U))
+
+  for t in range(1, T):
+    alphas[t, 0] = alphas[t-1, 0] + log_probs[t-1, 0, blank]
+
+  for u in range(1, U):
+    alphas[0, u] = alphas[0, u-1] + log_probs[0, u-1, labels[u-1]]
+  for t in range(1, T):
+    for u in range(1, U):
+      no_emit = alphas[t-1, u] + log_probs[t-1, u, blank]
+      emit = alphas[t, u-1] + log_probs[t, u-1, labels[u-1]]
+      # alphas[t, u] = np.logaddexp(emit, no_emit)
+      alphas[t, u] = logsumexp(emit, no_emit)
+          
+          
+
+  loglike = alphas[T-1, U-1] + log_probs[T-1, U-1, blank]
+  return alphas, loglike
+
+def backward_pass(log_probs, labels, blank):
+
+  T, U, _ = log_probs.shape
+  # betas = np.zeros((T, U))
+  betas = Tensor.zeros((T, U))
+  betas[T-1, U-1] = log_probs[T-1, U-1, blank]
+
+  for t in reversed(range(T-1)):
+    betas[t, U-1] = betas[t+1, U-1] + log_probs[t, U-1, blank]
+
+  for u in reversed(range(U-1)):
+    betas[T-1, u] = betas[T-1, u+1] + log_probs[T-1, u, labels[u]]
+
+  for t in reversed(range(T-1)):
+    for u in reversed(range(U-1)):
+      no_emit = betas[t+1, u] + log_probs[t, u, blank]
+      emit = betas[t, u+1] + log_probs[t, u, labels[u]]
+      # betas[t, u] = np.logaddexp(emit, no_emit)
+      betas[t, u] = logsumexp(emit, no_emit)
+
+  return betas, betas[0, 0]
+
+def compute_gradient(log_probs, alphas, betas, labels, blank):
+  T, U, _ = log_probs.shape
+  # grads = np.full(log_probs.shape, -float("inf"))
+  grads = Tensor.full(log_probs.shape, -float("inf"))
+  log_like = betas[0, 0]
+
+  grads[T-1, U-1, blank] = alphas[T-1, U-1]
+
+  grads[:T-1, :, blank] = alphas[:T-1, :] + betas[1:, :]
+  for u, l in enumerate(labels):
+    grads[:, u, l] = alphas[:, u] + betas[:, u+1]
+
+  # grads = -np.exp(grads + log_probs - log_like)
+  grads = -((grads + log_probs - log_like).exp())
+  return grads
+
+def transduce(log_probs, labels, blank=0):
+  """
+  Args:
+      log_probs: 3D array with shape
+            [input len, output len + 1, vocab size]
+      labels: 1D array with shape [output time steps]
+  Returns:
+      float: The negative log-likelihood
+      3D array: Gradients with respect to the
+                  unnormalized input actications
+  """
+  alphas, ll_forward = forward_pass(log_probs, labels, blank)
+  betas, ll_backward = backward_pass(log_probs, labels, blank)
+  grads = compute_gradient(log_probs, alphas, betas, labels, blank)
+  return -ll_forward, grads
+
+def transduce_batch_helper(log_probs, labels, xlen, ylen, blank=0):
+  # grads = np.zeros_like(log_probs)
+  grads = Tensor.zeros_like(log_probs)
+  costs = []
+
+  for b in range(log_probs.shape[0]):
+    t = int(xlen[b].item())
+    u = int(ylen[b].item()) + 1
+    ll, g = transduce(log_probs[b, :t, :u, :], labels[b, :u-1], blank)
+    grads[b, :t, :u, :] = g
+    costs.append(ll)
+  return costs, grads
+
+
+
+
+
+# class Loss:
+#     def __init__(self, phi_idx: int) -> None:
+#         # super().__init__()
+#         self.phi_idx = phi_idx
+
+#     def forward(
+#             self,
+#             probs: Tensor,
+#             target: Tensor,
+#             target_lengths: Tensor
+#             ) -> Tensor:
+#         # target_lengths = target_lengths.to(self.device)
+#         batch_size, max_length, *_ = probs.shape
+#         n_chars = target_lengths.max().item()
+#         n_nulls = max_length - n_chars
+#         # initializing the scores matrix
+#         scores = self.get_score_matrix(batch_size, n_chars, n_nulls)
+#         # scores = scores.to(self.device)
+#         # going over all possible alignment paths
+#         for c in range(n_chars + 1):
+#             for p in range(n_nulls + 1):
+#                 if c == 0 and p == 0:
+#                     # keeping scores[:, c, p] zeros
+#                     continue
+#                 scores = self.update_scores(scores, probs, target, p, c)
+#         return self.calc_loss(scores, target_lengths)
+
+#     def calc_loss(self, scores: Tensor, target_lengths: Tensor) -> Tensor:
+#         """Calculates the loss from the given loglikelhood of all paths
+
+#         Args:
+#             scores (Tensor): The score matrix
+#             target_lengths (Tensor): A tensor contains the lengths of
+#             the true target
+
+#         Returns:
+#             Tensor: The loss
+#         """
+#         # should we normalize by the number of paths ?
+#         loss = torch.diagonal(torch.index_select(
+#             scores[:, :, -1], dim=1, index=target_lengths
+#             ))
+#         # loss = 
+#         loss = -1 * loss
+#         return loss.mean()
+
+#     def get_score_matrix(
+#             self, batch_size: int, n_chars: int, n_nulls: int
+#             ) -> Tensor:
+#         """Returns a zeros matrix with (B, n_chars, n_nulls) shape
+
+#         Args:
+#             batch_size (int): the target batch size
+#             n_chars (int): the number of maximum length of chars
+#             n_nulls (int): the number of nulls to be added to reach the
+#             maximum length
+
+#         Returns:
+#             Tensor: Zeros matrix with (B, n_chars, n_nulls) shape
+#         """
+#         # return torch.zeros(batch_size, n_chars + 1, n_nulls + 1)
+#         return Tensor.zeros(batch_size, n_chars + 1, n_nulls + 1)
+
+#     def update_scores(
+#             self, scores: Tensor, probs: Tensor, target: Tensor, p: int, c: int
+#             ) -> Tensor:
+#         """Updates the given scores matrix based on the values of p and c
+
+#         Args:
+#             scores (Tensor): The scores matrix
+#             probs (Tensor): The probabilities scores out of the model
+#             target (Tensor): The target values
+#             p (int): The location on the nulls dimension in the scores
+#             matrix
+#             c (int): The location on the characters dimension in the scores
+#             matrix
+
+#         Returns:
+#             Tensor: The updated scores matrix
+#         """
+#         if p == 0:
+#             chars_probs = self.get_chars_probs(probs, target, c, p)
+#             scores[:, c, p] = chars_probs + scores[:, c - 1, p]
+#             return scores
+#         elif c == 0:
+#             phi_probs = self.get_phi_probs(probs, c, p)
+#             scores[:, c, p] = phi_probs + scores[:, c, p - 1]
+#             return scores
+#         chars_probs = self.get_chars_probs(probs, target, c, p)
+#         phi_probs = self.get_phi_probs(probs, c, p)
+#         scores[:, c, p] = torch.logsumexp(
+#             torch.stack(
+#                 [scores[:, c, p - 1] + self.log(phi_probs),
+#                 scores[:, c - 1, p] + self.log(chars_probs)]
+#             ), dim=0)
+#         return scores
+
+#     def get_phi_probs(self, probs: Tensor, c: int, p: int) -> Tensor:
+#         return probs[:, c + p - 1, self.phi_idx]
+
+#     def get_chars_probs(
+#             self, probs: Tensor, target: Tensor, c: int, p: int
+#             ) -> Tensor:
+#         all_seqs = probs[:, p + c - 1]
+#         result = torch.index_select(all_seqs, dim=-1, index=target[:, c - 1])
+#         return torch.diagonal(result)
+
 
 class RNNT:
   def __init__(self, input_features=240, vocab_size=29, enc_hidden_size=1024, pred_hidden_size=320, joint_hidden_size=512, pre_enc_layers=2, post_enc_layers=3, pred_layers=2, stack_time_factor=2, dropout=0.32):

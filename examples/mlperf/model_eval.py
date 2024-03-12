@@ -6,7 +6,7 @@ from tinygrad import Tensor, Device, dtypes, GlobalCounters
 from tinygrad.features.jit import TinyJit
 from tinygrad.nn.state import get_parameters, load_state_dict, safe_load
 from tinygrad.helpers import getenv, Timing
-from examples.mlperf import helpers
+import helpers
 def tlog(x): print(f"{x:25s}  @ {time.perf_counter()-start:5.2f}s")
 
 def eval_resnet():
@@ -106,7 +106,7 @@ def eval_retinanet():
   from tinygrad.features.jit import TinyJit
   mdlrun = TinyJit(lambda x: mdl(input_fixup(x)).realize())
 
-  n, bs = 0, 8
+  n, bs = 0, 8*6
   st = time.perf_counter()
   for x, targets in iterate(coco, bs):
     dat = Tensor(x.astype(np.float32))
