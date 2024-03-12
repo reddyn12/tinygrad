@@ -155,6 +155,8 @@ def eval_rnnt():
   words = 0
   st = time.perf_counter()
   for X, Y in iterate():
+    print('X:', len(X),X)
+    print('Y:', type(Y), len(Y), Y)
     mt = time.perf_counter()
     tt = mdl.decode(Tensor(X[0]), Tensor([X[1]]))
     et = time.perf_counter()

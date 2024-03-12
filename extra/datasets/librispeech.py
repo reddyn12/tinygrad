@@ -3,7 +3,8 @@ import pathlib
 import numpy as np
 import librosa
 import soundfile
-
+from extra.models.rnnt import Tokenizer
+from tinygrad import dtypes, Tensor
 """
 The dataset has to be downloaded manually from https://www.openslr.org/12/ and put in `extra/datasets/librispeech`.
 For mlperf validation the dev-clean dataset is used.
@@ -21,6 +22,8 @@ with open(BASEDIR / "dev-clean-wav.json") as f:
 
 FILTER_BANK = np.expand_dims(librosa.filters.mel(sr=16000, n_fft=512, n_mels=80, fmin=0, fmax=8000), 0)
 WINDOW = librosa.filters.get_window("hann", 320)
+
+TOKENIZER = Tokenizer()
 
 def feature_extract(x, x_lens):
   x_lens = np.ceil((x_lens / 160) / 3).astype(np.int32)
@@ -59,7 +62,9 @@ def feature_extract(x, x_lens):
   features = (features - np.expand_dims(features_mean, 2)) / np.expand_dims(features_std, 2)
 
   return features.transpose(2, 0, 1), x_lens.astype(np.float32)
-
+def tokenize_transcripts(transcripts):
+  tt = [TOKENIZER.tokenize(t) for t in transcripts]
+  return tt, [len(t) for t in tt]
 def load_wav(file):
   sample = soundfile.read(file)[0].astype(np.float32)
   return sample, sample.shape[0]
@@ -76,7 +81,49 @@ def iterate(bs=1, start=0):
     samples, sample_lens = np.array(samples), np.array(sample_lens)
 
     yield feature_extract(samples, sample_lens), np.array([v["transcript"] for v in ci[i : i + bs]])
+def zero_pad_concat(inputs):
+  max_t = max(inp.shape[0] for inp in inputs)
+  shape = (len(inputs), max_t) + inputs[0].shape[1:]
+  input_mat = np.zeros(shape, dtype=np.float32)
+  # input_mat = Tensor.zeros(shape, dtype=dtypes.float)
+  for e, inp in enumerate(inputs):
+    input_mat[e, :inp.shape[0]] = inp
+  return input_mat
 
+def end_pad_concat(inputs):
+  max_t = max(len(i) for i in inputs)
+  shape = (len(inputs), max_t)
+  labels = np.full(shape, fill_value=inputs[0][-1], dtype='i')
+  # labels = Tensor.full(shape, inputs[0][-1])
+  for e, l in enumerate(inputs):
+    labels[e, :len(l)] = l
+  return labels
+
+def convert(inputs, labels):
+  # length no need move to gpu
+  
+  xlen = Tensor([i.shape[0] for i in inputs]).float()
+  ylen = Tensor([len(i) for i in labels]).float()
+  xs = Tensor(zero_pad_concat(inputs)).float()
+  ys = Tensor(end_pad_concat(labels)).float()
+  return xs, ys, xlen, ylen
+def iterate_new(bs=1, start=0):
+  print(f"there are {len(ci)} samples in the dataset")
+  for i in range(start, len(ci), bs):
+    samples, sample_lens = zip(*[load_wav(BASEDIR / v["files"][0]["fname"]) for v in ci[i : i + bs]])
+    samples = list(samples)
+    transcripts = [v["transcript"] for v in ci[i : i + bs]]
+    transcripts,_ = tokenize_transcripts(transcripts)
+    # pad to same length
+    max_len = max(sample_lens)
+    for j in range(len(samples)):
+      samples[j] = np.pad(samples[j], (0, max_len - sample_lens[j]), "constant")
+    samples, sample_lens = np.array(samples), np.array(sample_lens)
+    samples, sample_lens = feature_extract(samples, sample_lens)
+    yield convert(samples, transcripts)
+ 
+
+    # yield feature_extract(samples, sample_lens), np.array([v["transcript"] for v in ci[i : i + bs]])
 if __name__ == "__main__":
   X, Y = next(iterate())
   print(X[0].shape, Y.shape)

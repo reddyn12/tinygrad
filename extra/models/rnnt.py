@@ -4,25 +4,72 @@ from tinygrad.nn import Linear, Embedding
 from tinygrad.helpers import fetch
 import numpy as np
 from pathlib import Path
+# MLPERF Config: https://github.com/mlcommons/training/blob/master/rnn_speech_recognition/pytorch/configs/baseline_v3-1023sp.yaml
+# tokenizer:
+#   sentpiece_model: /datasets/sentencepieces/librispeech1023.model
+#   labels: [" ", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+#            "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'"]
+LABELS = [" ", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+             "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'"]
+BLANK = len(LABELS)
+class Tokenizer:
+  def __init__(self, labels=LABELS, sentpiece_model=None):
+    """Converts transcript to a sequence of tokens.
+
+    Args:
+        labels (str): all possible output symbols
+    """
+    # For labels use vocab or load worpieces
+    self.charset = labels
+    self.use_sentpiece = (sentpiece_model is not None)
+    if self.use_sentpiece:
+      import sentencepiece as spm
+      self.sentpiece = spm.SentencePieceProcessor(model_file=sentpiece_model)
+      self.num_labels = len(self.sentpiece)
+    else:
+      self.num_labels = len(self.charset)
+      self.label2ind = {lab: i for i, lab in enumerate(self.charset)}
+
+  def tokenize(self, transcript):
+    if self.use_sentpiece:
+      inds = self.sentpiece.encode(transcript, out_type=int)
+      assert 0 not in inds, '<unk> found during tokenization (OOV?)'
+    else:
+      inds = [self.label2ind[x]
+      for x in transcript if x in self.label2ind]
+    return inds
+
+  def detokenize(self, inds):
+    if self.use_sentpiece:
+      return self.sentpiece.decode(inds)
+    else:
+      return ''.join(self.charset[i] for i in inds)
 
 # https://assets.amazon.science/6e/5f/5ef4386f4e0d896d612284c9b9b6/efficient-minimum-word-error-rate-training-of-rnn-transducer-for-end-to-end-speech-recognition.pdf
 # https://github.com/HawkAaron/RNN-Transducer/blob/graves2013/rnnt_np.py
 def logsumexp(x1:Tensor, x2:Tensor) -> Tensor:
-  return (x1.exp() + x2.exp()).log()
+  temp = (x1.exp() + x2.exp()).log()
+  temp.requires_grad = False
+  return temp
 def forward_pass(log_probs, labels, blank):
   T, U, _ = log_probs.shape
   # alphas = np.zeros((T, U))
-  alphas = Tensor.zeros((T, U))
+  alphas = Tensor.zeros((T, U), requires_grad=False)
 
   for t in range(1, T):
-    alphas[t, 0] = alphas[t-1, 0] + log_probs[t-1, 0, blank]
+    temp = alphas[t-1, 0] + log_probs[t-1, 0, blank]
+    temp.requires_grad = False
+    
+    alphas[t, 0] = temp
 
   for u in range(1, U):
-    alphas[0, u] = alphas[0, u-1] + log_probs[0, u-1, labels[u-1]]
+    temp = alphas[0, u-1] + log_probs[0, u-1, int(labels[u-1].item())]
+    temp.requires_grad = False
+    alphas[0, u] = temp
   for t in range(1, T):
     for u in range(1, U):
       no_emit = alphas[t-1, u] + log_probs[t-1, u, blank]
-      emit = alphas[t, u-1] + log_probs[t, u-1, labels[u-1]]
+      emit = alphas[t, u-1] + log_probs[t, u-1, int(labels[u-1].item())]
       # alphas[t, u] = np.logaddexp(emit, no_emit)
       alphas[t, u] = logsumexp(emit, no_emit)
           
@@ -35,19 +82,25 @@ def backward_pass(log_probs, labels, blank):
 
   T, U, _ = log_probs.shape
   # betas = np.zeros((T, U))
-  betas = Tensor.zeros((T, U))
-  betas[T-1, U-1] = log_probs[T-1, U-1, blank]
+  betas = Tensor.zeros((T, U), requires_grad=False)
+  temp = log_probs[T-1, U-1, blank]
+  temp.requires_grad = False
+  betas[T-1, U-1] = temp
 
   for t in reversed(range(T-1)):
-    betas[t, U-1] = betas[t+1, U-1] + log_probs[t, U-1, blank]
+    temp = betas[t+1, U-1] + log_probs[t, U-1, blank]
+    temp.requires_grad = False
+    betas[t, U-1] = temp
 
   for u in reversed(range(U-1)):
-    betas[T-1, u] = betas[T-1, u+1] + log_probs[T-1, u, labels[u]]
+    temp = betas[T-1, u+1] + log_probs[T-1, u, int(labels[u].item())]
+    temp.requires_grad = False
+    betas[T-1, u] = temp
 
   for t in reversed(range(T-1)):
     for u in reversed(range(U-1)):
       no_emit = betas[t+1, u] + log_probs[t, u, blank]
-      emit = betas[t, u+1] + log_probs[t, u, labels[u]]
+      emit = betas[t, u+1] + log_probs[t, u, int(labels[u].item())]
       # betas[t, u] = np.logaddexp(emit, no_emit)
       betas[t, u] = logsumexp(emit, no_emit)
 
@@ -62,8 +115,14 @@ def compute_gradient(log_probs, alphas, betas, labels, blank):
   grads[T-1, U-1, blank] = alphas[T-1, U-1]
 
   grads[:T-1, :, blank] = alphas[:T-1, :] + betas[1:, :]
+  
+  
   for u, l in enumerate(labels):
-    grads[:, u, l] = alphas[:, u] + betas[:, u+1]
+    print('COMPUTE GRAD',labels.shape, u, u+1)
+    # temp hack?
+    temp = alphas[:, u//labels.shape[0]] + betas[:, (u+1)//labels.shape[0]]
+    temp.requires_grad = False
+    grads[:, u, int(l.item())] = temp
 
   # grads = -np.exp(grads + log_probs - log_like)
   grads = -((grads + log_probs - log_like).exp())
@@ -85,7 +144,7 @@ def transduce(log_probs, labels, blank=0):
   grads = compute_gradient(log_probs, alphas, betas, labels, blank)
   return -ll_forward, grads
 
-def transduce_batch_helper(log_probs, labels, xlen, ylen, blank=0):
+def transduce_batch_helper(log_probs, labels, xlen, ylen, blank=BLANK):
   # grads = np.zeros_like(log_probs)
   grads = Tensor.zeros_like(log_probs)
   costs = []
@@ -94,11 +153,39 @@ def transduce_batch_helper(log_probs, labels, xlen, ylen, blank=0):
     t = int(xlen[b].item())
     u = int(ylen[b].item()) + 1
     ll, g = transduce(log_probs[b, :t, :u, :], labels[b, :u-1], blank)
+    g.requires_grad = False
     grads[b, :t, :u, :] = g
     costs.append(ll)
   return costs, grads
+def RNNT_LOSS(output:Tensor) -> Tensor:
+  
+  return output
 
+def train_epoch():
+  pass
+# def zero_pad_concat(inputs):
+#   max_t = max(inp.shape[0] for inp in inputs)
+#   shape = (len(inputs), max_t) + inputs[0].shape[1:]
+#   input_mat = np.zeros(shape, dtype=np.float32)
+#   for e, inp in enumerate(inputs):
+#     input_mat[e, :inp.shape[0]] = inp
+#   return input_mat
 
+# def end_pad_concat(inputs):
+#   max_t = max(i.shape[0] for i in inputs)
+#   shape = (len(inputs), max_t)
+#   labels = np.full(shape, fill_value=inputs[0][-1], dtype='i')
+#   for e, l in enumerate(inputs):
+#     labels[e, :len(l)] = l
+#   return labels
+
+# def convert(inputs, labels, ctx):
+#   # length no need move to gpu
+#   xlen = mx.nd.array([i.shape[0] for i in inputs], ctx=ctx)
+#   ylen = mx.nd.array([i.shape[0] for i in labels], ctx=ctx)
+#   xs = mx.nd.array(zero_pad_concat(inputs), ctx=ctx)
+#   ys = mx.nd.array(end_pad_concat(labels), ctx=ctx)
+#   return xs, ys, xlen, ylen
 class RNNT:
   def __init__(self, input_features=240, vocab_size=29, enc_hidden_size=1024, pred_hidden_size=320, joint_hidden_size=512, pre_enc_layers=2, post_enc_layers=3, pred_layers=2, stack_time_factor=2, dropout=0.32):
     self.encoder = Encoder(input_features, enc_hidden_size, pre_enc_layers, post_enc_layers, stack_time_factor, dropout)
@@ -118,7 +205,8 @@ class RNNT:
     for b in range(logits.shape[0]):
       inseq = logits[b, :, :].unsqueeze(1)
       logit_len = logit_lens[b]
-      seq = self._greedy_decode(inseq, int(np.ceil(logit_len.numpy()).item()))
+      # seq = self._greedy_decode(inseq, int(np.ceil(logit_len.numpy()).item()))
+      seq = self._greedy_decode(inseq, int(Tensor.ceil(logit_len).item()))
       outputs.append(seq)
     return outputs
 
@@ -144,7 +232,7 @@ class RNNT:
         added += 1
     return labels
 
-  @TinyJit
+  # @TinyJit
   def _pred_joint(self, logit, label, hc, mask):
     g, hc = self.prediction(label, hc, mask)
     j = self.joint(logit, g)[0]
