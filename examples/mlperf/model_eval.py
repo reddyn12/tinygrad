@@ -6,7 +6,8 @@ from tinygrad import Tensor, Device, dtypes, GlobalCounters
 from tinygrad.features.jit import TinyJit
 from tinygrad.nn.state import get_parameters, load_state_dict, safe_load
 from tinygrad.helpers import getenv, Timing
-import helpers
+from examples.mlperf import helpers
+
 def tlog(x): print(f"{x:25s}  @ {time.perf_counter()-start:5.2f}s")
 
 def eval_resnet():
