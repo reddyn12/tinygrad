@@ -66,7 +66,7 @@ class TestLinearizer(unittest.TestCase):
     b_bufs = [u.uop for u in lin.uops.uops[-2].vin[1].vin]
 
     assert a_bufs == [UOps.LOAD, UOps.CONST]
-    assert b_bufs == [UOps.CONST, UOps.CONST]
+    assert b_bufs == [] # [UOps.CONST, UOps.CONST] will be folded
 
   def test_upcast_cse(self):
     # when upcasting, within a subtree, there may be common expressions.
@@ -126,7 +126,6 @@ class TestLinearizer(unittest.TestCase):
     num_ops = len([uop for uop in k.uops if uop.uop == UOps.ALU])
     assert num_ops == 0, "more alu uops than needed"
 
-  @unittest.skip("constant folding not supported yet")
   def test_constant_fold(self):
     a, b = Tensor(2), Tensor(3)
     r = a * b
@@ -205,7 +204,7 @@ class TestLinearizer(unittest.TestCase):
                    ConstBuffer(42, dtypes.float, ShapeTracker(views=(View(shape=(), strides=(), offset=0, mask=None, contiguous=True),))))
       ast = LazyOp(BufferOps.STORE, (ast,),
                    MemBuffer(0, dtypes.float, ShapeTracker(views=(View(shape=(), strides=(), offset=0, mask=None, contiguous=True),))))
-      lin = Linearizer(ast=ast) # this is a dummy ast
+      lin = Linearizer(ast) # this is a dummy ast
 
       lin.uops = UOpGraph()
       return lin.uops.add(uop, dtype, vin, arg, cachable=False)
@@ -216,7 +215,27 @@ class TestLinearizer(unittest.TestCase):
     c0 = UOp(UOps.CONST, dtypes.float, vin=(), arg=0.0)
     c1 = UOp(UOps.CONST, dtypes.float, vin=(), arg=1.0)
     assert helper_test_simplify(UOps.ALU, dtypes.float, vin=(UOp(UOps.CONST, dtypes.bool, vin=(), arg=True), c0, c1),
-                                arg=TernaryOps.WHERE).uop == UOps.CONST
+                                arg=TernaryOps.WHERE).arg == c0.arg
+
+  def test_phi_simplification(self):
+    def helper(t, max_ops=0):
+      sched = create_schedule([t.lazydata])
+      assert len(sched) == 1
+      k = Linearizer(sched[0].ast)
+      k.hand_coded_optimizations()
+      uops = list(k.linearize().uops)
+      # ignore kernel optimized IF/LOOP statements for now
+      if if_op:=next((u for u in uops if u.uop is UOps.IF), None):
+        uops = uops[:uops.index(if_op)]
+      assert len(set([u.uop for u in uops if u.uop in {UOps.LOOP, UOps.SPECIAL}])) == 1, "has either specials or loops, not both"
+      assert len([u for u in uops if u.uop == UOps.PHI]) == 0, "PHI should have been simplified"
+      assert len([u for u in uops if u.arg == BinaryOps.MAX]) <= max_ops, "no unnecessary MAX ops"
+
+    helper(Tensor.arange(5.5, (3.5*300), 3.5))
+    helper(Tensor.arange(-1, -100, -5))
+    helper(Tensor.arange(-3.2, 6.7, 0.64))
+    helper(Tensor.arange(256), max_ops=2)
+    helper(Tensor.arange(255), max_ops=0)
 
 def helper_realized_ast(r:Tensor):
   s = create_schedule([r.lazydata])
