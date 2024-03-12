@@ -110,6 +110,7 @@ def compute_gradient(log_probs, alphas, betas, labels, blank):
   T, U, _ = log_probs.shape
   # grads = np.full(log_probs.shape, -float("inf"))
   grads = Tensor.full(log_probs.shape, -float("inf"))
+  # grads.requires_grad = False
   log_like = betas[0, 0]
 
   grads[T-1, U-1, blank] = alphas[T-1, U-1]
@@ -118,7 +119,7 @@ def compute_gradient(log_probs, alphas, betas, labels, blank):
   
   
   for u, l in enumerate(labels):
-    print('COMPUTE GRAD',labels.shape, u, u+1)
+    # print('COMPUTE GRAD',labels.shape, u, u+1)
     # temp hack?
     temp = alphas[:, u//labels.shape[0]] + betas[:, (u+1)//labels.shape[0]]
     temp.requires_grad = False
@@ -147,6 +148,8 @@ def transduce(log_probs, labels, blank=0):
 def transduce_batch_helper(log_probs, labels, xlen, ylen, blank=BLANK):
   # grads = np.zeros_like(log_probs)
   grads = Tensor.zeros_like(log_probs)
+  # grads.requires_grad = False
+  # costs = Tensor.empty((log_probs.shape[0],))
   costs = []
 
   for b in range(log_probs.shape[0]):
@@ -155,7 +158,10 @@ def transduce_batch_helper(log_probs, labels, xlen, ylen, blank=BLANK):
     ll, g = transduce(log_probs[b, :t, :u, :], labels[b, :u-1], blank)
     g.requires_grad = False
     grads[b, :t, :u, :] = g
+    # ll.requires_grad = False
+    # costs[b] = ll
     costs.append(ll)
+  grads.realize()
   return costs, grads
 def RNNT_LOSS(output:Tensor) -> Tensor:
   

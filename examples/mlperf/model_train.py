@@ -39,12 +39,28 @@ def train_rnnt():
   # y_lens = Tensor(y[1])
   
   x, y, x_len, y_len = next(iterate_new(bs=4))
+  # print(y.numpy())
+  # _,y,_,y_len = next(iterate_new(bs=4, start=10))
+  # print(y.numpy())
+
   print(x.shape, y.shape, x_len.shape, y_len.shape)
   output = model(x, y).log_softmax()
   output = output.realize()
+  print('pre loss', output.shape)
   # loss, grad = loss_fn(output)
+  # Tensor.no_grad = True
+  # Tensor.requires_grad = False
+  
+  # output = Tensor.ones_like(output)
   losses, output.grad = loss_fn(output, y, x_len, y_len)
-  print(output.shape, output.grad, output.grad.shape, losses)
+  # losses = Tensor(losses)
+  # losses.backward()
+  # output.backward()
+  # Tensor.requires_grad = True
+  print(output.shape, output.grad, output.grad.shape)
+  for i in losses:
+    print(i.numpy())
+  # print(output.grad.numpy())
   
   
 
