@@ -174,8 +174,8 @@ class RNNT_LOSS(Function):
     # a = Tensor.empty((B,T,C), requires_grad=True)
     
     # l = Tensor.empty((B,), requires_grad=True)
-    a = [None]*B
-    l = [None]*B
+    # a = [None]*B
+    # l = [None]*B
     for i in range(B):
       
       at,lt = forward_pass(log_probs[i], labels[i])
@@ -183,16 +183,17 @@ class RNNT_LOSS(Function):
       # lt.realize()
       # at.requires_grad=False
       # lt.requires_grad=False
-      a[i], l[i] = at, lt
+      # a[i], l[i] = at, lt
    
-    a = Tensor.stack(a)
-    l = Tensor.stack(l)
+    # a = Tensor.stack(a)
+    # l = Tensor.stack(l)
     # a,l = forward_pass(log_probs[0], labels[0])
     
-    print('AAAAA:', a.shape)
+    # print('AAAAA:', a.shape)
     
     
-    return -l
+    # return -l
+    return -lt
   # @staticmethod
   def backward(self, log_probs, labels):
     b,l = backward_pass(log_probs, labels)

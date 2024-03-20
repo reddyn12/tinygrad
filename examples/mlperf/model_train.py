@@ -41,14 +41,20 @@ def train_rnnt():
   # y_tensors = [Tensor(t) for t in y[0]]
   # y_lens = Tensor(y[1])
   
-  x, y, x_len, y_len = next(iterate_new(bs=4))
+  # x, y, x_len, y_len = next(iterate_new(bs=4))
+  x, y, x_len, y_len = next(iterate_new(bs=1))
+
   # print(y.numpy())
   # _,y,_,y_len = next(iterate_new(bs=4, start=10))
   # print(y.numpy())
+# TEST FUCK ARROUNG
+  # x = x+1
 
   print(x.shape, y.shape, x_len.shape, y_len.shape)
   output = model(x, y).log_softmax()
   output = output.realize()
+  # fake_output = Tensor.rand(output.shape)
+  # output = fake_output.log_softmax()
   # output.requires_grad = True
   # loss_TESTER = rnnt.RNNT_LOSS(Device.DEFAULT, output)
 
@@ -58,9 +64,15 @@ def train_rnnt():
   # Tensor.requires_grad = False
   
   # output = Tensor.ones_like(output)
-  
+  # loss_class = loss_TESTER(fake_output, y)
+
   loss_class = loss_TESTER(output, y)
-  print('LOSS_CLASS:', loss_class.shape, loss_class.numpy())
+  loss_class.realize()
+  print('LOSS_CLASS:', loss_class.shape, loss_class.numpy(), loss_class.grad, output.grad)
+  # loss_class = loss_class.item()
+  loss_class.backward()
+  print('LOSS_CLASS POST_BACK:', loss_class.shape, loss_class.numpy(), loss_class.grad, loss_class.grad.numpy(), output.grad.numpy())
+
   
   
   # losses, grads = loss_fn(output, y, x_len, y_len)
