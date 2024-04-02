@@ -150,7 +150,7 @@ class MambaMixer:
 
     if not hasattr(self, 'conv_state'):
       self.conv_state = Tensor.zeros(batch, self.dim * self.expand, self.d_conv).contiguous().realize()
-      self.ssm_state = Tensor.zeros(batch, self.dim * self.expand, self.d_state).realize()
+      self.ssm_state = Tensor.zeros(batch, self.dim * self.expand, self.d_state).contiguous().realize()
 
       xz = self.in_proj.weight @ hidden_states.permute(2,0,1).reshape(hidden_states.shape[2],hidden_states.shape[1]*hidden_states.shape[0])
       xz = xz.reshape(xz.shape[0],xz.shape[1]//seqlen, seqlen).permute(1,0,2)
@@ -189,7 +189,7 @@ class MambaMixer:
     x, z = xz.chunk(2, dim=-1)  # (B D)
 
     # Conv step
-    self.conv_state.assign(self.conv_state[:, :, 1:].cat(x.unsqueeze(-1), dim=-1).realize())
+    self.conv_state.assign(self.conv_state[:, :, 1:].cat(x.unsqueeze(-1), dim=-1))
     x = (self.conv_state * self.conv1d.weight.squeeze(1)).sum(-1)
     if self.conv1d.bias is not None:
       x = x + self.conv1d.bias
@@ -207,7 +207,7 @@ class MambaMixer:
     dt = (dt + self.dt_proj.bias.unsqueeze(-1)).softplus()
     dA = Tensor.einsum("db,dn->bdn", dt, A).exp()
     dB = Tensor.einsum("db,bn->bdn", dt, B)
-    self.ssm_state.assign(self.ssm_state * dA + x.unsqueeze(-1) * dB)
+    self.ssm_state.assign(self.ssm_state * dA + x.unsqueeze(-1) * dB).realize()
     y = Tensor.einsum("bdn,bn->bd", self.ssm_state, C)
     y = y + self.D * x
     y = y * z.swish()  # (B D)
@@ -254,8 +254,6 @@ class Mamba:
     self.backbone = MambaBackbone(dim, n_layers, vocab_size)
     self.lm_head = nn.Linear(dim, vocab_size, bias=False)
 
-    self.forward_jit = TinyJit(self.forward)
-
   def forward(self, input_ids:Tensor):
     hidden_states = self.backbone(input_ids)
     return self.lm_head(hidden_states).realize()
@@ -272,23 +270,22 @@ class Mamba:
     return model
 
 
-def generate(model, tokenizer, prompt: str, n_tokens_to_gen: int = 10, temp: bool = 1.0, sample: bool = False, top_k: int = None):
+def generate(model, tokenizer, prompt: str, n_tokens_to_gen: int = 10, temp: float = 1.0, sample: bool = False, top_k: int = None):
   tks = tokenizer(prompt)["input_ids"]
   while len(tks) < 4:
     tks = [50279] + tks
 
+  # TODO: topk
+  if sample: gen_fn = TinyJit(lambda l: (l/temp).softmax().multinomial())
+  else: gen_fn = TinyJit(lambda l: l.argmax(axis=-1).unsqueeze(0))
+  cust_forward = TinyJit(lambda tok: model.forward(tok)[:, -1, :])
   # Loading in the prompt tokens
   logits = model.forward(Tensor([tks]))[:, -1, :]
   for _ in tqdm(range(n_tokens_to_gen), desc="Speed Gen"):
-    # TODO: topk
-    if sample:
-      tok_Tens = (logits/temp).softmax().multinomial()
-    else:
-      tok_Tens = logits.argmax(axis=-1).unsqueeze(0)
+    tok_Tens = gen_fn(logits)
     tok = tok_Tens.item()
     tks.append(tok)
-    logits = model.forward_jit(tok_Tens)[:, -1, :]
-
+    logits = cust_forward(tok_Tens)
   output_completions = ''.join([tokenizer.decode(output) for output in tks])
   return output_completions
 
