@@ -110,7 +110,9 @@ def eval_retinanet():
     dat = Tensor(x.astype(np.float32))
     mt = time.perf_counter()
     if dat.shape[0] == bs:
-      outs = mdlrun(dat).numpy()
+      o = mdlrun(dat)
+      print('OUT IDD', o.mean().numpy())
+      outs = o.numpy()
     else:
       mdlrun.jit_cache = None
       outs =  mdl(input_fixup(dat)).numpy()
