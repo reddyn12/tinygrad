@@ -279,8 +279,8 @@ def train_retinanet():
   from extra.models import resnet
   from examples.hlb_cifar10 import UnsyncedBatchNorm
   from tinygrad.nn.optim import Adam
-  from extra.datasets.openimages_new import iterate, iterate_val, MATCHER_FUNC
-  from extra.datasets.openimages_new import get_openimages
+  from extra.datasets.openimages_new import iterate, iterate_val, MATCHER_FUNC, batch_load_retinanet
+  from extra.datasets.openimages_new import get_openimages, resize_boxes
   from pycocotools.cocoeval import COCOeval
   from pycocotools.coco import COCO
   ROOT = 'extra/datasets/open-images-v6TEST'
@@ -335,7 +335,7 @@ def train_retinanet():
     optimizer.zero_grad()
 
     # b,r,c = mdlrun(X)
-    b,r,c = model(X, True)
+    b,r,c = model(normalize(X), True)
 
     loss_reg = mdl_reg_loss(r, Y_b_P, matched_idxs, boxes_temp)
     loss_class = mdl_class_loss(c, Y_l_P, matched_idxs, labels_temp)
@@ -353,11 +353,62 @@ def train_retinanet():
     Tensor.training = False
     out = model(X)
     return out.realize()
-  func = None
+  image_std = Tensor([0.229, 0.224, 0.225], device=GPUS).reshape(1,-1,1,1)#.to(GPUS)
+  image_mean = Tensor([0.485, 0.456, 0.406], device=GPUS).reshape(1,-1,1,1)#.to(GPUS)
+  def normalize(x):
+    x = x.permute((0,3,1,2)) / 255.0
+    # x = x /255.0
+    # x = x.permute((2,1,0)) / 255.0
+    x -= image_mean
+    x /= image_std
+    return x#.realize()
+  def data_get(it, coco):
+    # print('DATA_GET_START')
+    x, y, yb, yl, cookie = next(it)
+    mi_TEMP = Tensor.zeros((2,120087), dtype=dtypes.int)
+    return x.shard(GPUS, axis=0), yl.shard(GPUS, axis=0)[(Tensor.arange(BS).reshape(-1,1), mi_TEMP)], \
+      yb.shard(GPUS, axis=0)[(Tensor.arange(BS).reshape(-1,1), mi_TEMP)],\
+        mi_TEMP.shard(GPUS, axis=0), cookie
+    match_idxs, labels, boxes = [], [], []
+    for box, label in zip(yb.to(GPUS[0]), yl.to(GPUS[0])):
+      m_idx = func(box).realize()
+      print('midx', m_idx.shape)
+      tbm = box[m_idx]
+      tlm = label[m_idx]
+      match_idxs.append(m_idx)
+      boxes.append(tbm)
+      labels.append(tlm)
+    return x.shard(GPUS, axis=0), Tensor.stack(labels).shard(GPUS, axis=0), \
+    Tensor.stack(boxes).shard(GPUS, axis=0), Tensor.stack(match_idxs).shard(GPUS, axis=0), cookie
+    x.realize()
+    print('DATA_NEXT_ITER')
+    match_idxs, labels, boxes = [], [], []
+    for bb, ll, i in zip(yb, yl, y):
+      pass
+    for i in y:
+      print('get_item')
+      img, target = coco.__getitem__(i)
+      # target = coco._load_target(coco.ids[i])
+      print('PRE_BOX_GET')
+      box = target['boxes'].realize()
+      print('PRE_RESIZE')
+      bbox = resize_boxes(box, img.size[::-1], (800,800)).realize()
+      print('POST_RESIZE')
+      m_idx = func(bbox)
+      print('FUNC_POST')
+      tbm = bbox[m_idx]
+      print('PRE_LABELS')
+      tlm = target['labels'][m_idx]
+      print('POST_LABELS')
+      match_idxs.append(m_idx)
+      labels.append(tlm)
+      boxes.append(tbm)
+    print('data_get end')
+    return x.shard(GPUS, axis=0).realize(), Tensor.stack(labels).shard(GPUS, axis=0),\
+    Tensor.stack(boxes).shard(GPUS, axis=0), Tensor.stack(match_idxs).shard(GPUS, axis=0), cookie
+
   for epoch in range(EPOCHS):
     print(colored(f'EPOCH {epoch}/{EPOCHS}:', 'cyan'))
-    # train_step.reset()
-    # mdlrun_false.reset()
     lr_sched = None
     if epoch < WARMUP_EPOCHS:
       start_iter = epoch*len(coco_train.ids)//BS
@@ -366,72 +417,36 @@ def train_retinanet():
     else:
       optimizer.lr.assign(Tensor([LR], device=GPUS))
     cnt = 0
-    data_end = time.perf_counter()
-    for X, Y_boxes, Y_labels, Y_boxes_p, Y_labels_p, M_IDXS in iterate(coco_train, BS, func):
-      # print('Global reset')
+    if epoch==0:
+      x_fake = Tensor.rand((BS,3,800,800)).shard(GPUS, axis=0)
+      b,_,_ = mdlrun(x_fake)
+      ANCHORS = anchor_generator(x_fake.shape, b)
+      ANCHORS = [a.realize() for a in ANCHORS]
+      ANCHORS_STACK = Tensor.stack(ANCHORS)
+      ANCHORS_STACK = ANCHORS_STACK.shard(GPUS, axis=0)
+      func = lambda x: model.matcher_gen_per_img(ANCHORS[0], x)
+      mdlrun.reset()
+      mdl_reg_loss = lambda r, y, m, b_t: model.head.regression_head.loss(r,y,ANCHORS_STACK, m, b_t)
+      mdl_class_loss = lambda c, y,m, l_t: model.head.classification_head.loss(c,y,m, l_t)
+    batch_loader_train = batch_load_retinanet(coco_train, bs=BS, val=False, shuffle=False)
+    it = iter(tqdm(batch_loader_train, total=len(coco_train)//BS, desc=f"epoch {epoch}"))
+    i, proc = 0, data_get(it, coco_train)
+    st = time.perf_counter()
+    while proc is not None:
       GlobalCounters.reset()
-      data_time = time.perf_counter() - data_end
-      st = time.perf_counter()
-      X = X.shard(GPUS, axis=0)
-      if(cnt==0 and epoch==0):
-        # o_x, oyb, oyl, omi = X, Y_boxes_p, Y_labels_p, M_IDXS
-        # INIT LOSS FUNC
-        b,_,_ = mdlrun(X)
-        for bb in b:
-          print(bb.shape)
-        ANCHORS = anchor_generator(X.shape, b)
-        ANCHORS = [a.realize() for a in ANCHORS]
-        ANCHORS_STACK = Tensor.stack(ANCHORS)
-        # print('ANCHOR_STACK', ANCHORS[0].shape)
-        # sys.exit()
-        ANCHORS_STACK = ANCHORS_STACK.shard(GPUS, axis=0)
-        func = lambda x: model.matcher_gen_per_img(ANCHORS[0], x)
-        # print(func)
-        mdlrun.reset()
-        # mdl_reg_loss_jit = TinyJit(lambda r, y, m: model.head.regression_head.loss(r,y,ANCHORS, m).realize())
-        # mdl_class_loss_jit = TinyJit(lambda c, y,m: model.head.classification_head.loss(c,y,m).realize())
-        mdl_reg_loss = lambda r, y, m, b_t: model.head.regression_head.loss(r,y,ANCHORS_STACK, m, b_t)
-        mdl_class_loss = lambda c, y,m, l_t: model.head.classification_head.loss(c,y,m, l_t)
-        break
-
-      else:
-        # print('ANCHORS', len(ANCHORS), ANCHORS[0].mean().item(), ANCHORS[1].mean().item())
-        # matcher_gen not jittable for now
-        pre_match = time.perf_counter()
-        # matched_idxs = model.matcher_gen(ANCHORS, Y_boxes) #.realize()
-        # matched_idxs = Tensor.stack(M_IDXS).realize()
-        matched_idxs = M_IDXS
-        # print('MATCHED_IDX', matched_idxs.mean().item())
-        pre_zip = time.perf_counter()
-
-        # Work around for zipping a sharded tensor
-        # Need to think of clean way to execute
-        # boxes_temp = []
-        # for tb, m in zip(Y_boxes_p, matched_idxs):
-        #   boxes_temp.append(tb[m].realize())
-        # boxes_temp = Tensor.stack(boxes_temp)
-        # labels_temp = []
-        # for tl, m in zip(Y_labels_p, matched_idxs):
-        #   labels_temp.append(tl[m].realize())
-        # labels_temp = Tensor.stack(labels_temp)
-        # boxes_temp = Tensor.stack(Y_boxes_p).realize()
-        # labels_temp = Tensor.stack(Y_labels_p).realize()
-        boxes_temp = Y_boxes_p
-        labels_temp = Y_labels_p
-        # print('matched_IDXS', matched_idxs.shape, len(Y_boxes))
-        pre_shard = time.perf_counter()
-        # print('MATH_DEVICE', matched_idxs.device)
-        matched_idxs = matched_idxs.shard(GPUS, axis=0)
-        # print('POST_MATH_DEVICE', matched_idxs.device)
-        # # Y_boxes_p.shard_(GPUS, axis=0)
-        # # Y_labels_p.shard_(GPUS, axis=0)
-        boxes_temp = boxes_temp.shard(GPUS, axis=0)
-        labels_temp = labels_temp.shard(GPUS, axis=0)
-        post_shard = time.perf_counter() - pre_shard
-        jit_t = time.perf_counter()
-        loss = train_step(X, None, None, matched_idxs, boxes_temp, labels_temp)
-        jitted_time = time.perf_counter()-jit_t
-        if lr_sched is not None:
+      # print(proc[0].shape, proc[3].shape, proc[2].shape, proc[1].shape)
+      loss, proc = train_step(proc[0], None, None, proc[3], proc[2], proc[1]), proc[4]
+      
+      
+      pt = time.perf_counter()
+      try:
+        next_proc = data_get(it, coco_train)
+      except StopIteration:
+        next_proc = None
+      dt = time.perf_counter()
+      device_str = loss.device if isinstance(loss.device, str) else f"{loss.device[0]} * {len(loss.device)}"
+      loss = loss.item()
+      if lr_sched is not None:
           lr_sched.step()
         et = time.perf_counter()-st
         if cnt%1==0:
