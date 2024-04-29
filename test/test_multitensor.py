@@ -1,6 +1,6 @@
 import unittest, functools, random
 from typing import List
-from tinygrad import Tensor, Device, nn, GlobalCounters, TinyJit, dtypes
+from tinygrad import Tensor, Device, nn, GlobalCounters, TinyJit
 from tinygrad.device import BufferCopy, CompiledRunner
 from tinygrad.ops import LoadOps, ReduceOps
 from tinygrad.helpers import CI, prod, Context
@@ -11,7 +11,6 @@ from tinygrad.features.multi import all_reduce, MultiLazyBuffer
 from random import randint
 import numpy as np
 from hypothesis import given, strategies as strat, settings
-from test.helpers import is_dtype_supported
 
 settings.register_profile("my_profile", max_examples=200, deadline=None)
 settings.load_profile("my_profile")
@@ -490,9 +489,7 @@ class TestShrinkMultiTensorShardedAxis(unittest.TestCase):
     assert p.shape == (8, 8)
     assert p.lazydata.real == [True, True, True, True]
 
-  @given(strat.sampled_from([dtypes.float, dtypes.int, dtypes.int64, dtypes.int16]))
-  def test_ops(self, dtype):
-    if not is_dtype_supported(dtype): return
+  def test_ops(self):
     t = Tensor.arange(64).reshape(8, 8).contiguous().realize()
     t.shard_([f"{Device.DEFAULT}:{i}" for i in range(4)], axis=0)
     for i in range(4):
