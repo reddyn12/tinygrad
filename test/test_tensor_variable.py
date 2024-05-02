@@ -63,8 +63,13 @@ class TestTensorVariable(unittest.TestCase):
     start.bind(0)
     step = Variable("c",0,10)
     step.bind(1)
+    # step = 1
     ret = Tensor.arange(start, stop, step)
     assert np.array_equal(ret.numpy(), np.array([0,1]))
+  def test(self):
+    t = Tensor.arange(0, 5, 1)
+    print(t.numpy())
+    assert np.array_equal(t.numpy(), np.array([0,1,2,3,4]))
 
 if __name__ == '__main__':
   unittest.main()

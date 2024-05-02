@@ -423,8 +423,13 @@ class Tensor:
     ```
     """
     if stop is None: stop, start = start, 0
-    start, stop, step = [arg.val if isinstance(arg, Variable) else arg for arg in [start, stop, step]]
+    # start, stop, step = [arg.val if isinstance(arg, Variable) else arg for arg in [start, stop, step]]
     dtype = kwargs.pop("dtype", dtypes.default_float if any(isinstance(x, float) for x in (start, stop, step)) else dtypes.default_int)
+    # temp = stop//step-start//step
+    temp = (stop-start)/step
+    # temp = stop/step - start/step
+    print('TENSOR_TEMP', temp, type(temp))
+    return (Tensor(step).repeat([temp])._cumsum() + (start - step)).cast(dtype)
     return (Tensor.full((math.ceil((stop-start)/step),), step, dtype=dtype, **kwargs)._cumsum() + (start - step)).cast(dtype)
 
   @staticmethod
@@ -991,7 +996,7 @@ class Tensor:
 
   def _pool(self, k_:Tuple[sint, ...], stride:Union[Tuple[int, ...], int]=1, dilation:Union[Tuple[int, ...], int]=1) -> Tensor:
     assert len(self.shape) >= len(k_), f"can't pool {self.shape} with {k_}"
-    assert all_int(self.shape) and all_int(k_), f"does not support symbolic {self.shape=}, {k_=}"
+    # assert all_int(self.shape) and all_int(k_), f"does not support symbolic {self.shape=}, {k_=}"
     s_, d_ = make_pair(stride, len(k_)), make_pair(dilation, len(k_))
     assert len(k_) == len(s_) == len(d_), f"stride/dilation mismatch kernel:{k_} stride:{s_} dilation:{d_}"
     noop_, i_ = [None] * len(self.shape[:-len(k_)]), self.shape[-len(k_):]
