@@ -608,7 +608,8 @@ def train_stable():
   TRAIN_TIMES={}
 
   model = stable_diffusion.StableDiffusion()
-  # Load model from 'https://huggingface.co/stabilityai/stable-diffusion-2-base/resolve/main/512-base-ema.ckpt' and ignore UNET
+  # Load model from 'https://huggingface.co/stabilityai/stable-diffusion-2-base/resolve/main/512-base-ema.ckpt' 
+  # and ignore UNET wieghts
 
   # Freeze all weights but UNET
 
@@ -623,7 +624,11 @@ def train_stable():
       # Take piece from dataloader and input to model
 
       # Calculate loss
-
+      # The loss is a reconstruction objective between the noise that was added to the latent and the 
+      # prediction made by the UNet. We also use the so-called v-objective, see https://arxiv.org/abs/2202.00512.
+      # Somewhere in this clusterfuck: 
+      # https://github.com/mlcommons/training/blob/master/stable_diffusion/ldm/models/diffusion/ddpm.py#L493
+      
       # Update grads
       pass
     et = time.perf_counter()

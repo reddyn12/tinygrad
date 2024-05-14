@@ -295,6 +295,8 @@ class UNetModel:
       [ResBlock(640, 1280, 320), SpatialTransformer(320, 768, 8, 40)],
     ]
     self.out = [
+      # The group norm of the UNet within our code uses a group size 
+      # of 16 instead of the 32 used in the original implementation.
       GroupNorm(32, 320),
       Tensor.silu,
       Conv2d(320, 4, kernel_size=3, padding=1)
