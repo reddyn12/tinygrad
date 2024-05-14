@@ -598,6 +598,7 @@ def train_stable():
   from examples import stable_diffusion
 
   BS = 32
+  BS_EVAL = 32
   EPOCHS = 6 #Epoch is 512,000 images
   GPUS = [f"{Device.DEFAULT}:{i}" for i in range(getenv("GPUS", 1))]
   print(f"training on {GPUS}")
@@ -647,10 +648,16 @@ def train_stable():
       del model
       model = stable_diffusion.StableDiffusion()
       # Load proper checkpoint
-      # Calculate FID
-      f_score = 0
-      # Calculate CLIP
-      c_score = 0
+      
+      # Spin up data loader
+      proc=None
+      
+      while proc is not None:
+        # Generate images from data_text
+        # Calculate FID with gen img and data_img
+        f_score = 0
+        # Calculate CLIP with gen img and data_text
+        c_score = 0
 
       EVAL_SCORES[e] = (f_score, c_score)
       if (f_score<=TARGET_FID and c_score>=TARGET_CLIP):
