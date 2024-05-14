@@ -580,8 +580,9 @@ class StableDiffusion:
 # cond_stage_model.transformer.text_model
 
 # FID Code: https://github.com/pytorch/vision/blob/main/torchvision/models/inception.py
+# https://github.com/mlcommons/training_results_v3.1/blob/main/NVIDIA/benchmarks/stable_diffusion/implementations/pytorch/evaluation/TFinception_V3.py
 
-# CLIP Score code: 
+# CLIP Score code: I think its already in file
 if __name__ == "__main__":
   default_prompt = "a horse sized cat eating a bagel"
   parser = argparse.ArgumentParser(description='Run Stable Diffusion', formatter_class=argparse.ArgumentDefaultsHelpFormatter)

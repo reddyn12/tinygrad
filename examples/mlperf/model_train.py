@@ -658,7 +658,8 @@ def train_stable():
         f_score = 0
         # Calculate CLIP with gen img and data_text
         c_score = 0
-
+      # FID is mean of fid_batches (I THINK!)
+      # CLIP is mean of clip_batches
       EVAL_SCORES[e] = (f_score, c_score)
       if (f_score<=TARGET_FID and c_score>=TARGET_CLIP):
         print(f'Reached target scores on EPOCH:{e} with FID:{f_score} CLIP:{c_score}')
