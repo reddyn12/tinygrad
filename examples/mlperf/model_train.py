@@ -595,8 +595,12 @@ def train_bert():
 
 def train_stable():
   # TODO: Stable Diffusion
-  from examples import stable_diffusion
-
+  from extra.models import stable_diffusion
+  from tinygrad.nn.optim import AdamW
+  from tinygrad.nn.state import torch_load
+  from tinygrad.helpers import fetch
+  import tempfile as tmp
+  import sys
   BS = 32
   BS_EVAL = 32
   EPOCHS = 6 #Epoch is 512,000 images
@@ -605,36 +609,59 @@ def train_stable():
   for x in GPUS: Device[x]
   TARGET_FID = 90
   TARGET_CLIP = 0.15
+  # dell: 5.12e-05 nvidia: 0.0002048
+  LR = 5.12e-05
+  WARMUP_STEPS = 1000
+  
   TRAIN_TIMES={}
-
+  ckpt_dir = tmp.TemporaryDirectory()
   model = stable_diffusion.StableDiffusion()
   # Load model from 'https://huggingface.co/stabilityai/stable-diffusion-2-base/resolve/main/512-base-ema.ckpt' 
-  # and ignore UNET wieghts
-
-  # Freeze all weights but UNET
+  # and ignore UNET wieghts - model.diffusion_model
+  loaded_weights = torch_load(fetch('https://huggingface.co/CompVis/stable-diffusion-v-1-4-original/resolve/main/sd-v1-4.ckpt', 'sd-v1-4.ckpt'))['state_dict']
+  # loaded_weights = torch_load(fetch('https://huggingface.co/stabilityai/stable-diffusion-2-base/resolve/main/512-base-ema.ckpt', 'sd-v2-mlperf.ckpt'))['state_dict']
+  for k,v in loaded_weights.items():
+    print(k)
+  sys.exit()
+  # Freeze all weights but UNET - model.diffusion_model (Dont learn logvar)
+  for k,v in get_state_dict(model).items():
+    if k.startswith('model.diffusion_model'):
+      v.requires_grad = True
+    else:
+      v.requires_grad = False
+  
+  # setup optimizer
+  optimizer = AdamW(get_parameters(model), lr=0.01)
+  
+  # setup Learnign Rate
 
   st = time.perf_counter()
-  # Spin up dataloader, should only use half of dataset
-
+  # Spin up dataloader, should only use half of dataset (2-3M out of 6M images)
+  proc = None
+  
   # Train for each epoch
   for e in EPOCHS:
 
     # Train
     for s in math.ceil(512000/BS):
+      optimizer.zero_grad()
       # Take piece from dataloader and input to model
 
       # Calculate loss
+      loss = Tensor([0])
       # The loss is a reconstruction objective between the noise that was added to the latent and the 
       # prediction made by the UNet. We also use the so-called v-objective, see https://arxiv.org/abs/2202.00512.
-      # Somewhere in this clusterfuck: 
+      # Somewhere in this clusterfuck (LatentDiffussion line 1136 (p_losses)): 
       # https://github.com/mlcommons/training/blob/master/stable_diffusion/ldm/models/diffusion/ddpm.py#L493
       
       # Update grads
+      loss.backward()
+      optimizer.step()
       pass
     et = time.perf_counter()
     TRAIN_TIMES[e] = et-st
     # Save checkpt for later eval
-
+    safe_save(get_state_dict(model), ckpt_dir+f'/stable_{e}.safe')
     # Reset Time
     st = time.perf_counter()
     pass
@@ -645,6 +672,7 @@ def train_stable():
   with Tensor.inference_mode():
     # Load FID and CLIP models
     # FID_WEIGHTS_URL='https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth'
+    # CLIP should already be loaded....
     # CLIP_WEIGHTS_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_pytorch_model.bin"
     # CLIP_CONFIG_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/raw/main/open_clip_config.json"
 
