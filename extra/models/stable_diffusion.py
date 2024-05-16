@@ -330,8 +330,8 @@ class UNetModel:
 
 class CLIPMLP:
   def __init__(self):
-    self.fc1 = Linear(768, 3072)
-    self.fc2 = Linear(3072, 768)
+    self.fc1 = Linear(1024, 4096)
+    self.fc2 = Linear(4096, 1024)
 
   def __call__(self, hidden_states):
     hidden_states = self.fc1(hidden_states)
@@ -341,7 +341,7 @@ class CLIPMLP:
 
 class CLIPAttention:
   def __init__(self):
-    self.embed_dim = 768
+    self.embed_dim = 1024
     self.num_heads = 12
     self.head_dim = self.embed_dim // self.num_heads
     self.k_proj = Linear(self.embed_dim, self.embed_dim)
@@ -359,9 +359,9 @@ class CLIPAttention:
 class CLIPEncoderLayer:
   def __init__(self):
     self.self_attn = CLIPAttention()
-    self.layer_norm1 = LayerNorm(768)
+    self.layer_norm1 = LayerNorm(1024)
     self.mlp = CLIPMLP()
-    self.layer_norm2 = LayerNorm(768)
+    self.layer_norm2 = LayerNorm(1024)
 
   def __call__(self, hidden_states, causal_attention_mask):
     residual = hidden_states
@@ -378,7 +378,7 @@ class CLIPEncoderLayer:
 
 class CLIPEncoder:
   def __init__(self):
-    self.layers = [CLIPEncoderLayer() for i in range(12)]
+    self.layers = [CLIPEncoderLayer() for i in range(24)]
 
   def __call__(self, hidden_states, causal_attention_mask):
     for l in self.layers:
@@ -521,7 +521,7 @@ def get_alphas_cumprod(beta_start=0.00085, beta_end=0.0120, n_training_steps=100
 
 class StableDiffusion:
   def __init__(self):
-    self.alphas_cumprod = get_alphas_cumprod()
+    self.alphas_cumprod = Tensor.empty(1000)
     self.model = namedtuple("DiffusionModel", ["diffusion_model"])(diffusion_model = UNetModel())
     self.first_stage_model = AutoencoderKL()
     self.cond_stage_model = namedtuple("CondStageModel", ["transformer"])(transformer = namedtuple("Transformer", ["text_model"])(text_model = CLIPTextTransformer()))

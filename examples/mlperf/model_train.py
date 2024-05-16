@@ -597,16 +597,16 @@ def train_stable():
   # TODO: Stable Diffusion
   from extra.models import stable_diffusion
   from tinygrad.nn.optim import AdamW
-  from tinygrad.nn.state import torch_load
+  from tinygrad.nn.state import torch_load, load_state_dict
   from tinygrad.helpers import fetch
   import tempfile as tmp
   import sys
   BS = 32
   BS_EVAL = 32
   EPOCHS = 6 #Epoch is 512,000 images
-  GPUS = [f"{Device.DEFAULT}:{i}" for i in range(getenv("GPUS", 1))]
-  print(f"training on {GPUS}")
-  for x in GPUS: Device[x]
+  # GPUS = [f"{Device.DEFAULT}:{i}" for i in range(getenv("GPUS", 1))]
+  # print(f"training on {GPUS}")
+  # for x in GPUS: Device[x]
   TARGET_FID = 90
   TARGET_CLIP = 0.15
   # dell: 5.12e-05 nvidia: 0.0002048
@@ -614,14 +614,50 @@ def train_stable():
   WARMUP_STEPS = 1000
   
   TRAIN_TIMES={}
-  ckpt_dir = tmp.TemporaryDirectory()
+  # ckpt_dir = tmp.TemporaryDirectory()
   model = stable_diffusion.StableDiffusion()
   # Load model from 'https://huggingface.co/stabilityai/stable-diffusion-2-base/resolve/main/512-base-ema.ckpt' 
   # and ignore UNET wieghts - model.diffusion_model
-  loaded_weights = torch_load(fetch('https://huggingface.co/CompVis/stable-diffusion-v-1-4-original/resolve/main/sd-v1-4.ckpt', 'sd-v1-4.ckpt'))['state_dict']
-  # loaded_weights = torch_load(fetch('https://huggingface.co/stabilityai/stable-diffusion-2-base/resolve/main/512-base-ema.ckpt', 'sd-v2-mlperf.ckpt'))['state_dict']
+  # loaded_weights = torch_load(fetch('https://huggingface.co/CompVis/stable-diffusion-v-1-4-original/resolve/main/sd-v1-4.ckpt', 'sd-v1-4.ckpt'))['state_dict']
+  loaded_weights = torch_load(fetch('https://huggingface.co/stabilityai/stable-diffusion-2-base/resolve/main/512-base-ema.ckpt', 'sd-v2-mlperf.ckpt'))['state_dict']
+  # for k,v in loaded_weights.items():
+  #   print(k)
+  loaded_weights_conv = {}
+  for p1,p2 in zip(get_state_dict(model).items(), loaded_weights.items()):
+    k1,v1 = p1
+    k2,v2 = p2
+    print(k1, k2)
+  pop_list = []
   for k,v in loaded_weights.items():
-    print(k)
+    if 'cond_stage_model.model.tran' in k:
+      new_k = k.replace('cond_stage_model.model.transformer.resblocks',
+                         'cond_stage_model.transformer.text_model.encoder.layers')
+      new_k = new_k.replace('ln_', 'layer_norm')
+      new_k = new_k.replace('c_fc', 'fc1')
+      new_k = new_k.replace('c_proj', 'fc2')
+      new_k = new_k.replace('.attn', '.self_attn')
+      if 'in_proj' in new_k:
+        print('IN_PROJ', v.shape)
+      # print(new_k)
+    else:
+      new_k = k
+    if 'model.diffu' not in k:
+      print('YUHHHHH',new_k)
+      loaded_weights_conv[new_k] = loaded_weights[k]
+# cond_stage_model.transformer.text_model.encoder.layers.15.layer_norm1.weight - DONE
+# cond_stage_model.transformer.text_model.encoder.layers.15.layer_norm1.bias - DONE
+# cond_stage_model.transformer.text_model.encoder.layers.15.attn.in_proj_weight
+# cond_stage_model.transformer.text_model.encoder.layers.15.attn.in_proj_bias
+# cond_stage_model.transformer.text_model.encoder.layers.15.attn.out_proj.weight
+# cond_stage_model.transformer.text_model.encoder.layers.15.attn.out_proj.bias
+# cond_stage_model.transformer.text_model.encoder.layers.15.layer_norm2.weight - DONE
+# cond_stage_model.transformer.text_model.encoder.layers.15.layer_norm2.bias - DONE
+# cond_stage_model.transformer.text_model.encoder.layers.15.mlp.fc1.weight - DONE
+# cond_stage_model.transformer.text_model.encoder.layers.15.mlp.fc1.bias - DONE
+# cond_stage_model.transformer.text_model.encoder.layers.15.mlp.fc2.weight - DONE
+# cond_stage_model.transformer.text_model.encoder.layers.15.mlp.fc2.bias - DONE
+  
+  load_state_dict(model, loaded_weights_conv, strict=False)
   sys.exit()
   # Freeze all weights but UNET - model.diffusion_model (Dont learn logvar)
   for k,v in get_state_dict(model).items():
@@ -648,6 +684,9 @@ def train_stable():
       # Take piece from dataloader and input to model
 
       # Calculate loss
+      # elif self.parameterization == "v":
+      #       lvlb_weights = torch.ones_like(self.betas ** 2 / (
+      #               2 * self.posterior_variance * to_torch(alphas) * (1 - self.alphas_cumprod)))
       loss = Tensor([0])
       # The loss is a reconstruction objective between the noise that was added to the latent and the 
       # prediction made by the UNet. We also use the so-called v-objective, see https://arxiv.org/abs/2202.00512.
