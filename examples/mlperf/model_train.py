@@ -651,14 +651,23 @@ def train_stable():
   for k,v in get_state_dict(model).items():
     if k.startswith('model.diffusion_model'):
       v.requires_grad = True
+      # print(k, v.shape)
     else:
       v.requires_grad = False
-  
+  sys.exit()
   # setup optimizer
   optimizer = AdamW(get_parameters(model), lr=LR)
   
-  # setup Learnign Rate
-
+  # setup Learnign Rate - LambdaLR
+  # scheduler_config:
+      # target: ldm.lr_scheduler.LambdaLinearScheduler
+      # params:
+      #   warm_up_steps: [ 1000 ]
+      #   cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
+      #   f_start: [ 1.e-6 ]
+      #   f_max: [ 1. ]
+      #   f_min: [ 1. ]
+  
   st = time.perf_counter()
   # Spin up dataloader, should only use half of dataset (2-3M out of 6M images)
   proc = None
@@ -697,11 +706,19 @@ def train_stable():
   
   EVAL_SCORES = {}
   TOTAL_TRAIN_TIME = 0
+  # validation_config:
+  #     sampler: "ddim" # plms, ddim, dpm
+  #     steps: 50
+  #     scale: 8.0
+  #     ddim_eta: 0.0
   # Eval for each epoch
   with Tensor.inference_mode():
     # Load FID and CLIP models
     # FID_WEIGHTS_URL='https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth'
-    # CLIP should already be loaded....
+    # # CLIP should already be loaded....
+    #  clip:
+    #     enabled: True
+    #     clip_version: "ViT-H-14"
     # CLIP_WEIGHTS_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_pytorch_model.bin"
     # CLIP_CONFIG_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/raw/main/open_clip_config.json"
 
