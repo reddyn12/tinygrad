@@ -614,7 +614,7 @@ def train_stable():
   WARMUP_STEPS = 1000
   
   TRAIN_TIMES={}
-  # ckpt_dir = tmp.TemporaryDirectory()
+  ckpt_dir = tmp.TemporaryDirectory()
   model = stable_diffusion.StableDiffusion()
   # Load model from 'https://huggingface.co/stabilityai/stable-diffusion-2-base/resolve/main/512-base-ema.ckpt' 
   # and ignore UNET wieghts - model.diffusion_model
@@ -623,42 +623,30 @@ def train_stable():
   # for k,v in loaded_weights.items():
   #   print(k)
   loaded_weights_conv = {}
-  for p1,p2 in zip(get_state_dict(model).items(), loaded_weights.items()):
-    k1,v1 = p1
-    k2,v2 = p2
-    print(k1, k2)
-  pop_list = []
+
+  # I dont think we need to load logit_scale because attention
+  # has scaled_cosine=False
   for k,v in loaded_weights.items():
-    if 'cond_stage_model.model.tran' in k:
+    # print(k)
+    if 'cond_stage_model.model' in k:
       new_k = k.replace('cond_stage_model.model.transformer.resblocks',
                          'cond_stage_model.transformer.text_model.encoder.layers')
-      new_k = new_k.replace('ln_', 'layer_norm')
-      new_k = new_k.replace('c_fc', 'fc1')
-      new_k = new_k.replace('c_proj', 'fc2')
-      new_k = new_k.replace('.attn', '.self_attn')
-      if 'in_proj' in new_k:
-        print('IN_PROJ', v.shape)
-      # print(new_k)
+      new_k = new_k.replace('cond_stage_model.model.token_embedding',
+                            'cond_stage_model.transformer.text_model.embeddings.token_embedding')
+      new_k = new_k.replace('cond_stage_model.model.ln_final', 'cond_stage_model.transformer.text_model.ln_final')
+      new_k = new_k.replace('cond_stage_model.model.positional_embedding', 
+                            'cond_stage_model.transformer.text_model.embeddings.positional_embedding.weight')
+      new_k = new_k.replace('cond_stage_model.model.text_projection', 
+                            'cond_stage_model.transformer.text_model.text_projection')
+      new_k = new_k.replace('in_proj_weight', 'in_proj.weight')
+      new_k = new_k.replace('in_proj_bias', 'in_proj.bias')
     else:
       new_k = k
     if 'model.diffu' not in k:
-      print('YUHHHHH',new_k)
-      loaded_weights_conv[new_k] = loaded_weights[k]
-# cond_stage_model.transformer.text_model.encoder.layers.15.layer_norm1.weight - DONE
-# cond_stage_model.transformer.text_model.encoder.layers.15.layer_norm1.bias - DONE
-# cond_stage_model.transformer.text_model.encoder.layers.15.attn.in_proj_weight
-# cond_stage_model.transformer.text_model.encoder.layers.15.attn.in_proj_bias
-# cond_stage_model.transformer.text_model.encoder.layers.15.attn.out_proj.weight
-# cond_stage_model.transformer.text_model.encoder.layers.15.attn.out_proj.bias
-# cond_stage_model.transformer.text_model.encoder.layers.15.layer_norm2.weight - DONE
-# cond_stage_model.transformer.text_model.encoder.layers.15.layer_norm2.bias - DONE
-# cond_stage_model.transformer.text_model.encoder.layers.15.mlp.fc1.weight - DONE
-# cond_stage_model.transformer.text_model.encoder.layers.15.mlp.fc1.bias - DONE
-# cond_stage_model.transformer.text_model.encoder.layers.15.mlp.fc2.weight - DONE
-# cond_stage_model.transformer.text_model.encoder.layers.15.mlp.fc2.bias - DONE
-  
+      loaded_weights_conv[new_k] = v
+    # loaded_weights_conv[new_k] = v
   load_state_dict(model, loaded_weights_conv, strict=False)
-  sys.exit()
+  # sys.exit()
   # Freeze all weights but UNET - model.diffusion_model (Dont learn logvar)
   for k,v in get_state_dict(model).items():
     if k.startswith('model.diffusion_model'):
@@ -667,7 +655,7 @@ def train_stable():
       v.requires_grad = False
   
   # setup optimizer
-  optimizer = AdamW(get_parameters(model), lr=0.01)
+  optimizer = AdamW(get_parameters(model), lr=LR)
   
   # setup Learnign Rate
 
@@ -676,18 +664,18 @@ def train_stable():
   proc = None
   
   # Train for each epoch
-  for e in EPOCHS:
+  for e in range(EPOCHS):
 
     # Train
-    for s in math.ceil(512000/BS):
+    for s in range(math.ceil(512000/BS)):
       optimizer.zero_grad()
       # Take piece from dataloader and input to model
 
-      # Calculate loss
+      # Calculate loss - MSE
       # elif self.parameterization == "v":
       #       lvlb_weights = torch.ones_like(self.betas ** 2 / (
       #               2 * self.posterior_variance * to_torch(alphas) * (1 - self.alphas_cumprod)))
-      loss = Tensor([0])
+      loss = Tensor(0)
       # The loss is a reconstruction objective between the noise that was added to the latent and the 
       # prediction made by the UNet. We also use the so-called v-objective, see https://arxiv.org/abs/2202.00512.
       # Somewhere in this clusterfuck (LatentDiffussion line 1136 (p_losses)): 
@@ -695,15 +683,17 @@ def train_stable():
       
       # Update grads
       loss.backward()
-      optimizer.step()
-      pass
+      # optimizer.step()
+      
     et = time.perf_counter()
     TRAIN_TIMES[e] = et-st
     # Save checkpt for later eval
-    safe_save(get_state_dict(model), ckpt_dir+f'/stable_{e}.safe')
+    fn = Path(ckpt_dir.name, f'stable_{e}.safe')
+    print('SAVING MODEL TO:', fn)
+    safe_save(get_state_dict(model), fn)
     # Reset Time
     st = time.perf_counter()
-    pass
+    
   
   EVAL_SCORES = {}
   TOTAL_TRAIN_TIME = 0
@@ -715,7 +705,7 @@ def train_stable():
     # CLIP_WEIGHTS_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_pytorch_model.bin"
     # CLIP_CONFIG_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/raw/main/open_clip_config.json"
 
-    for e in EPOCHS:
+    for e in range(EPOCHS):
       TOTAL_TRAIN_TIME+=TRAIN_TIMES[e]
       del model
       model = stable_diffusion.StableDiffusion()
@@ -737,8 +727,8 @@ def train_stable():
         print(f'Reached target scores on EPOCH:{e} with FID:{f_score} CLIP:{c_score}')
         print(f'Trained in {TOTAL_TRAIN_TIME} secs')
 
-      pass
-  pass
+      
+  
 
 def train_lora():
   # TODO: Llama2 Lora

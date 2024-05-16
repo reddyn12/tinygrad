@@ -330,47 +330,51 @@ class UNetModel:
 
 class CLIPMLP:
   def __init__(self):
-    self.fc1 = Linear(1024, 4096)
-    self.fc2 = Linear(4096, 1024)
+    self.c_fc = Linear(1024, 4096)
+    self.c_proj = Linear(4096, 1024)
 
   def __call__(self, hidden_states):
-    hidden_states = self.fc1(hidden_states)
+    hidden_states = self.c_fc(hidden_states)
     hidden_states = hidden_states.quick_gelu()
-    hidden_states = self.fc2(hidden_states)
+    hidden_states = self.c_proj(hidden_states)
     return hidden_states
 
 class CLIPAttention:
+  # https://github.com/mlfoundations/open_clip/blob/main/src/open_clip/transformer.py
   def __init__(self):
     self.embed_dim = 1024
-    self.num_heads = 12
+    self.num_heads = 8
     self.head_dim = self.embed_dim // self.num_heads
-    self.k_proj = Linear(self.embed_dim, self.embed_dim)
-    self.v_proj = Linear(self.embed_dim, self.embed_dim)
-    self.q_proj = Linear(self.embed_dim, self.embed_dim)
+    # self.k_proj = Linear(self.embed_dim, self.embed_dim)
+    # self.v_proj = Linear(self.embed_dim, self.embed_dim)
+    # self.q_proj = Linear(self.embed_dim, self.embed_dim)
+    # self.in_proj_weight = Tensor.randn((1024*3, 1024))
+    # self.in_proj_bias = Tensor.randn((1024*3))
+    self.in_proj = Linear(1024, 1024*3)
     self.out_proj = Linear(self.embed_dim, self.embed_dim)
 
   def __call__(self, hidden_states, causal_attention_mask):
-    bsz, tgt_len, embed_dim = hidden_states.shape
-    q,k,v = self.q_proj(hidden_states), self.k_proj(hidden_states), self.v_proj(hidden_states)
-    q,k,v = [x.reshape(bsz, tgt_len, self.num_heads, self.head_dim).transpose(1, 2) for x in (q,k,v)]
+    L, N, C = hidden_states.shape
+    q,k,v = self.in_proj(hidden_states).chunk(3,-1)
+    q,k,v = [x.reshape(L, N * self.num_heads, -1).transpose(0, 1) for x in (q,k,v)]
     attn_output = Tensor.scaled_dot_product_attention(q, k, v, attn_mask=causal_attention_mask)
-    return self.out_proj(attn_output.transpose(1, 2).reshape(bsz, tgt_len, embed_dim))
+    return self.out_proj(attn_output.transpose(0, 1).reshape(L, N, C))
 
 class CLIPEncoderLayer:
   def __init__(self):
-    self.self_attn = CLIPAttention()
-    self.layer_norm1 = LayerNorm(1024)
+    self.attn = CLIPAttention()
+    self.ln_1 = LayerNorm(1024)
     self.mlp = CLIPMLP()
-    self.layer_norm2 = LayerNorm(1024)
+    self.ln_2 = LayerNorm(1024)
 
   def __call__(self, hidden_states, causal_attention_mask):
     residual = hidden_states
-    hidden_states = self.layer_norm1(hidden_states)
-    hidden_states = self.self_attn(hidden_states, causal_attention_mask)
+    hidden_states = self.ln_1(hidden_states)
+    hidden_states = self.attn(hidden_states, causal_attention_mask)
     hidden_states = residual + hidden_states
 
     residual = hidden_states
-    hidden_states = self.layer_norm2(hidden_states)
+    hidden_states = self.ln_2(hidden_states)
     hidden_states = self.mlp(hidden_states)
     hidden_states = residual + hidden_states
 
@@ -387,22 +391,25 @@ class CLIPEncoder:
 
 class CLIPTextEmbeddings:
   def __init__(self):
-    self.token_embedding = Embedding(49408, 768)
-    self.position_embedding = Embedding(77, 768)
+    self.token_embedding = Embedding(49408, 1024)
+    self.positional_embedding = Embedding(77, 1024)
 
   def __call__(self, input_ids, position_ids):
-    return self.token_embedding(input_ids) + self.position_embedding(position_ids)
+    return self.token_embedding(input_ids) + self.positional_embedding(position_ids)
 
 class CLIPTextTransformer:
   def __init__(self):
     self.embeddings = CLIPTextEmbeddings()
     self.encoder = CLIPEncoder()
-    self.final_layer_norm = LayerNorm(768)
+    self.ln_final = LayerNorm(1024)
+    self.text_projection = Tensor.empty((1024,1024))
 
   def __call__(self, input_ids):
     x = self.embeddings(input_ids, Tensor.arange(input_ids.shape[1]).reshape(1, -1))
     x = self.encoder(x, Tensor.full((1, 1, 77, 77), float("-inf")).triu(1))
-    return self.final_layer_norm(x)
+    x = self.ln_final(x)
+    x = x[Tensor.arange(x.shape[0]), input_ids.argmax(axis=-1)]
+    return x @ self.text_projection 
 
 # Clip tokenizer, taken from https://github.com/openai/CLIP/blob/main/clip/simple_tokenizer.py (MIT license)
 @lru_cache()
@@ -521,7 +528,18 @@ def get_alphas_cumprod(beta_start=0.00085, beta_end=0.0120, n_training_steps=100
 
 class StableDiffusion:
   def __init__(self):
+    self.betas = Tensor.empty(1000)
     self.alphas_cumprod = Tensor.empty(1000)
+    self.alphas_cumprod_prev = Tensor.empty(1000)
+    self.posterior_log_variance_clipped = Tensor.empty((1000,))
+    self.posterior_mean_coef1 = Tensor.empty(1000)
+    self.posterior_mean_coef2 = Tensor.empty(1000)
+    self.posterior_variance = Tensor.empty(1000)
+    self.log_one_minus_alphas_cumprod = Tensor.empty(1000)
+    self.sqrt_alphas_cumprod = Tensor.empty(1000)
+    self.sqrt_one_minus_alphas_cumprod = Tensor.empty(1000)
+    self.sqrt_recip_alphas_cumprod = Tensor.empty(1000)
+    self.sqrt_recipm1_alphas_cumprod = Tensor.empty(1000)
     self.model = namedtuple("DiffusionModel", ["diffusion_model"])(diffusion_model = UNetModel())
     self.first_stage_model = AutoencoderKL()
     self.cond_stage_model = namedtuple("CondStageModel", ["transformer"])(transformer = namedtuple("Transformer", ["text_model"])(text_model = CLIPTextTransformer()))
