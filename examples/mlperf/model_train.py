@@ -654,7 +654,7 @@ def train_stable():
       # print(k, v.shape)
     else:
       v.requires_grad = False
-  sys.exit()
+  # sys.exit()
   # setup optimizer
   optimizer = AdamW(get_parameters(model), lr=LR)
   
@@ -670,21 +670,24 @@ def train_stable():
   
   st = time.perf_counter()
   # Spin up dataloader, should only use half of dataset (2-3M out of 6M images)
-  proc = None
+  proc = [Tensor.rand(3,256,256)]
   
   # Train for each epoch
   for e in range(EPOCHS):
 
     # Train
     for s in range(math.ceil(512000/BS)):
+      
       optimizer.zero_grad()
+      time_step = Tensor.randint(1, low=0, high=1000)
       # Take piece from dataloader and input to model
-
+      x_noised, v = model.forward_noise_add(proc[0], time_step)
+      v_pred = model(x_noised, time_step)
       # Calculate loss - MSE
+      loss = (v_pred-v).exp2().mean()
       # elif self.parameterization == "v":
       #       lvlb_weights = torch.ones_like(self.betas ** 2 / (
       #               2 * self.posterior_variance * to_torch(alphas) * (1 - self.alphas_cumprod)))
-      loss = Tensor(0)
       # The loss is a reconstruction objective between the noise that was added to the latent and the 
       # prediction made by the UNet. We also use the so-called v-objective, see https://arxiv.org/abs/2202.00512.
       # Somewhere in this clusterfuck (LatentDiffussion line 1136 (p_losses)): 
@@ -693,6 +696,7 @@ def train_stable():
       # Update grads
       loss.backward()
       # optimizer.step()
+      print('FINISHED ONE PASS')
       
     et = time.perf_counter()
     TRAIN_TIMES[e] = et-st

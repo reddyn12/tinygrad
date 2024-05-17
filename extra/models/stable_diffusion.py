@@ -574,7 +574,15 @@ class StableDiffusion:
     x = (x + 1.0) / 2.0
     x = x.reshape(3,512,512).permute(1,2,0).clip(0,1)*255
     return x.cast(dtypes.uint8) if Device.DEFAULT != "WEBGPU" else x
-
+  def forward_noise_add(self, x, t):
+    noise = Tensor.randn(x.shape)
+    x_noised = self.sqrt_alphas_cumprod[t] * x + self.sqrt_one_minus_alphas_cumprod[t] * noise
+    return x_noised, noise
+  def forward_diffusopn_v(self, x, t):
+    noise = Tensor.randn(x.shape)
+    x_noised = self.sqrt_alphas_cumprod[t] * x + self.sqrt_one_minus_alphas_cumprod[t] * noise
+    v = (x_noised - self.sqrt_alphas_cumprod[t] * x) / self.sqrt_one_minus_alphas_cumprod[t]
+    return x_noised, v
   def __call__(self, unconditional_context, context, latent, timestep, alphas, alphas_prev, guidance):
     e_t = self.get_model_output(unconditional_context, context, latent, timestep, guidance)
     x_prev, _ = self.get_x_prev_and_pred_x0(latent, e_t, alphas, alphas_prev)
