@@ -595,7 +595,7 @@ def train_bert():
 
 def train_stable():
   # TODO: Stable Diffusion
-  from extra.models import stable_diffusion
+  from extra.models import stable_diffusion, fid
   from tinygrad.nn.optim import AdamW
   from tinygrad.nn.state import torch_load, load_state_dict
   from tinygrad.helpers import fetch
@@ -719,13 +719,17 @@ def train_stable():
   with Tensor.inference_mode():
     # Load FID and CLIP models
     # FID_WEIGHTS_URL='https://github.com/mseitzer/pytorch-fid/releases/download/fid_weights/pt_inception-2015-12-05-6726825d.pth'
-    # # CLIP should already be loaded....
+    model_fid = fid.FID_Inception_V3()
+    model_fid.load_pretrained()
+    # # CLIP should already be loaded.... Need to implement vision transformer part
     #  clip:
     #     enabled: True
     #     clip_version: "ViT-H-14"
     # CLIP_WEIGHTS_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_pytorch_model.bin"
     # CLIP_CONFIG_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/raw/main/open_clip_config.json"
-
+    model_clip = stable_diffusion.CLIPTextTransformer()
+    model_clip.load_pretrained()
+    
     for e in range(EPOCHS):
       TOTAL_TRAIN_TIME+=TRAIN_TIMES[e]
       del model

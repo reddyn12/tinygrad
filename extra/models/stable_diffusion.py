@@ -410,7 +410,11 @@ class CLIPTextTransformer:
     x = self.ln_final(x)
     x = x[Tensor.arange(x.shape[0]), input_ids.argmax(axis=-1)]
     return x @ self.text_projection 
-
+  
+  def load_pretrained(self):
+    w = torch_load(fetch('https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_pytorch_model.bin', 'clip_h-14.bin'))
+    load_state_dict(self, w, True)
+  
 # Clip tokenizer, taken from https://github.com/openai/CLIP/blob/main/clip/simple_tokenizer.py (MIT license)
 @lru_cache()
 def default_bpe(): return fetch("https://github.com/openai/CLIP/raw/main/clip/bpe_simple_vocab_16e6.txt.gz", "bpe_simple_vocab_16e6.txt.gz")
