@@ -596,6 +596,7 @@ def train_bert():
 def train_stable():
   # TODO: Stable Diffusion
   # TODO: Download train/val IMAGES
+  # TODO: Fix Stable_Diff __call__ method
   # TODO: Check FID model
   # TODO: Impl vision CLIP
   # TODO: Add LabdaLR_Scheduler

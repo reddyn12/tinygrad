@@ -33,8 +33,10 @@ extra/datasets/open-images-v6-mlperf
 extra/datasets/kits/
 extra/datasets/COCO/
 extra/datasets/audio*
+extra/datasets/laion-400m
 extra/weights
 venv
+ckpts
 examples/**/net.*[js,json]
 examples/**/*.safetensors
 node_modules
