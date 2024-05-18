@@ -595,6 +595,13 @@ def train_bert():
 
 def train_stable():
   # TODO: Stable Diffusion
+  # TODO: Download train/val IMAGES
+  # TODO: Check FID model
+  # TODO: Impl vision CLIP
+  # TODO: Add LabdaLR_Scheduler
+  # TODO: Check cosine_scheduler
+  # TODO: Check loss impl with v-parametrization
+  
   from extra.models import stable_diffusion, fid
   from tinygrad.nn.optim import AdamW
   from tinygrad.nn.state import torch_load, load_state_dict

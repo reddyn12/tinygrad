@@ -2,10 +2,8 @@ from tinygrad import Tensor
 from tinygrad.nn import Conv2d, BatchNorm2d
 from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.helpers import fetch
-import torch
-torch.nn.AdaptiveAvgPool2d()
-torch.nn.Conv2d()
-Conv2d()
+
+
 # NVIDA config: tfinception
 
 # Add padding to Tensor.avg_pool2d - check Tensor.conv2d logic pad2d._pool
