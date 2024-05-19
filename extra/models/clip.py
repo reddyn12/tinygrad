@@ -28,6 +28,17 @@ class CLIP:
     
     return x@self.text_projection
   
+  def get_clip_score(self, img:Tensor, txt:Tensor):
+    img_feat = self.encode_image(img)
+    norm = (img_feat**2).sum(-1)**0.5
+    img_feat = img_feat/norm.unsqueeze(-1)
+    
+    txt_feat = self.encode_text(txt)
+    norm = (txt_feat**2).sum(-1)**0.5
+    txt_feat = txt_feat/norm.unsqueeze(-1)
+    
+    return img_feat@txt_feat.T
+    
   def load_pretrained(self):
     w = torch_load(fetch('https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_pytorch_model.bin', 'clip_h-14.bin'))
     w_new = {}

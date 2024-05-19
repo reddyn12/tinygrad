@@ -603,7 +603,7 @@ def train_stable():
   # TODO: Check cosine_scheduler
   # TODO: Check loss impl with v-parametrization
   
-  from extra.models import stable_diffusion, fid
+  from extra.models import stable_diffusion, fid, clip
   from tinygrad.nn.optim import AdamW
   from tinygrad.nn.state import torch_load, load_state_dict
   from tinygrad.helpers import fetch
@@ -735,7 +735,7 @@ def train_stable():
     #     clip_version: "ViT-H-14"
     # CLIP_WEIGHTS_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_pytorch_model.bin"
     # CLIP_CONFIG_URL="https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/raw/main/open_clip_config.json"
-    model_clip = stable_diffusion.CLIPTextTransformer()
+    model_clip = clip.CLIP()
     model_clip.load_pretrained()
     
     for e in range(EPOCHS):
@@ -749,9 +749,11 @@ def train_stable():
       
       while proc is not None:
         # Generate images from data_text
+        out = model.generate(proc[1])
         # Calculate FID with gen img and data_img
         f_score = 0
         # Calculate CLIP with gen img and data_text
+        c_score = model_clip.get_clip_score(out, proc[1])
         c_score = 0
       # FID is mean of fid_batches (I THINK!)
       # CLIP is mean of clip_batches
