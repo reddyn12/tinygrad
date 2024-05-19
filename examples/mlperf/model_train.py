@@ -597,7 +597,7 @@ def train_stable():
   # TODO: Stable Diffusion
   # TODO: Download train/val IMAGES
   # TODO: Fix Stable_Diff __call__ method
-  # TODO: Check FID model
+  # TODO: Check FID model - loads properly, need to check computation
   # TODO: Impl vision CLIP
   # TODO: Add LabdaLR_Scheduler
   # TODO: Check cosine_scheduler
@@ -609,8 +609,8 @@ def train_stable():
   from tinygrad.helpers import fetch
   import tempfile as tmp
   import sys
-  BS = 32
-  BS_EVAL = 32
+  BS = 8
+  BS_EVAL = 8
   EPOCHS = 6 #Epoch is 512,000 images
   # GPUS = [f"{Device.DEFAULT}:{i}" for i in range(getenv("GPUS", 1))]
   # print(f"training on {GPUS}")
@@ -678,7 +678,7 @@ def train_stable():
   
   st = time.perf_counter()
   # Spin up dataloader, should only use half of dataset (2-3M out of 6M images)
-  proc = [Tensor.rand(3,256,256)]
+  proc = [Tensor.rand(BS, 3,256,256)]
   
   # Train for each epoch
   for e in range(EPOCHS):
@@ -687,7 +687,7 @@ def train_stable():
     for s in range(math.ceil(512000/BS)):
       
       optimizer.zero_grad()
-      time_step = Tensor.randint(1, low=0, high=1000)
+      time_step = Tensor.randint(BS, low=0, high=1000)
       # Take piece from dataloader and input to model
       x_noised, v = model.forward_noise_add(proc[0], time_step)
       v_pred = model(x_noised, time_step)

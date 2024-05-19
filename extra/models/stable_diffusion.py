@@ -408,6 +408,7 @@ class CLIPTextTransformer:
     x = self.embeddings(input_ids, Tensor.arange(input_ids.shape[1]).reshape(1, -1))
     x = self.encoder(x, Tensor.full((1, 1, 77, 77), float("-inf")).triu(1))
     x = self.ln_final(x)
+    # text gloabl pool
     x = x[Tensor.arange(x.shape[0]), input_ids.argmax(axis=-1)]
     return x @ self.text_projection 
   

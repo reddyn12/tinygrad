@@ -71,8 +71,15 @@ class FID_Inception_V3:
       
 class BasicConv2d:
   def __init__(self, in_channels:int, out_channels:int,  **kwargs):
-    self.conv = Conv2d(in_channels, out_channels, bias=False, **kwargs)
     self.bn = BatchNorm2d(out_channels, eps=0.001)
+    self.conv = Conv2d(in_channels, out_channels, bias=False, **kwargs)
+    
+    self.bn.num_batches_tracked = self.bn.num_batches_tracked.squeeze(0)
+  def __call__(self, x:Tensor):
+    x = self.conv(x)
+    x = self.bn(x)
+    return x.relu()
+
         
 class FID_Inception_A:
   def __init__(self, in_channels, pool_features):
