@@ -1,7 +1,8 @@
 from typing import Any
 from tinygrad import Tensor
 from tinygrad.nn import Conv2d, Embedding, LayerNorm, Linear
-
+from tinygrad.nn.state import get_state_dict, torch_load, load_state_dict
+from tinygrad.helpers import fetch
 class CLIP:
   def __init__(self):
     self.visual = CLIP_Vision()
@@ -26,13 +27,21 @@ class CLIP:
     x = x[Tensor.arange(x.shape[0]), text.argmax(axis=-1)]
     
     return x@self.text_projection
+  
+  def load_pretrained(self):
+    w = torch_load(fetch('https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_pytorch_model.bin', 'clip_h-14.bin'))
+    w_new = {}
+    for k,v in w.items():
+      new_k = k.replace('in_proj_', 'in_proj.')
+      w_new[new_k] = v
+    load_state_dict(self, w_new)
     
     
 
 class CLIP_Text:
   def __init__(self, width=1024, layers=24):
     self.embeddings = CLIPTextEmbeddings()
-    self.transformer = CLIPEncoder(width, layers)
+    self.transformer = CLIPEncoder(width, 16, layers)
     self.ln_final = LayerNorm(width)
     self.text_projection = Tensor.empty((width,width))
 
@@ -53,7 +62,7 @@ class CLIP_Vision:
     self.conv1 = Conv2d(3, width, kernel_size=patch_size, stride=patch_size, bias=False)
     self.class_embedding = Tensor.empty(width)
     self.positional_embedding = Tensor.empty(grid_size**2+1, width)
-    self.transformer = CLIPEncoder(width, 16,layers)
+    self.transformer = CLIPEncoder(width, head_width,layers)
     self.ln_pre = LayerNorm(width)
     self.ln_post = LayerNorm(width)
     self.proj = Tensor.empty(width, 1024)
