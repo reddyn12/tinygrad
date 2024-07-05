@@ -6,7 +6,8 @@ import numpy as np
 import random
 from tinygrad import Tensor, dtypes, Device
 from tinygrad.helpers import getenv
-from pycocotools.coco import COCO
+# from pycocotools.coco import COCO
+from examples.mlperf.helpers import COCO
 
 SIZE = (800, 800)
 CPUS = getenv('CORES', 5)
