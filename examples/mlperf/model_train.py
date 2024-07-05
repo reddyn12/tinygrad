@@ -467,8 +467,8 @@ def train_retinanet():
   mdl_class_loss = lambda c, m, l_t: model.head.classification_head.loss(c,m, l_t)
 
   def data_get(it):
-    x, yb, yl, ym, cookie = next(it)
-    return x.shard(GPUS, axis=0), yb.shard(GPUS, axis=0), yl.shard(GPUS, axis=0), ym.shard(GPUS, axis=0), cookie
+    x, yb, yl, ym = next(it)
+    return x.shard(GPUS, axis=0), yb.shard(GPUS, axis=0), yl.shard(GPUS, axis=0), ym.shard(GPUS, axis=0)
   def data_get_val(it):
     x, Y_idx, cookie = next(it)
     return x.shard(GPUS, axis=0), Y_idx, cookie
@@ -494,7 +494,7 @@ def train_retinanet():
     st = time.perf_counter()
     while not EVAL_ONLY and proc is not None:
       GlobalCounters.reset()
-      loss, proc = train_step(proc[0], proc[1], proc[2], proc[3]), proc[4]
+      loss = train_step(proc[0], proc[1], proc[2], proc[3])
 
       pt = time.perf_counter()
       try: 

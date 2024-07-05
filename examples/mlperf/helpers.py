@@ -245,22 +245,11 @@ from matplotlib.patches import Polygon
 import numpy as np
 import copy
 import itertools
-# from . import mask as maskUtils
 import os
 from collections import defaultdict
 import sys
 import mmap
 import pickle
-PYTHON_VERSION = sys.version_info[0]
-if PYTHON_VERSION == 2:
-    from urllib import urlretrieve
-elif PYTHON_VERSION == 3:
-    from urllib.request import urlretrieve
-
-
-def _isArrayLike(obj):
-    return hasattr(obj, '__iter__') and hasattr(obj, '__len__')
-
 
 class COCO:
     def __init__(self, annotation_file=None):
@@ -401,7 +390,7 @@ class COCO:
 
         print('Loading and preparing results...')
         tic = time.time()
-        if type(resFile) == str or (PYTHON_VERSION == 2 and type(resFile) == unicode):
+        if type(resFile) == str:
             anns = json.load(open(resFile))
         elif type(resFile) == np.ndarray:
             anns = self.loadNumpyAnnotations(resFile)

@@ -191,85 +191,188 @@ def loader_process(q_in, q_out, X:Tensor, seed, coco, YB:Tensor, YL:Tensor, YM:T
 
       q_out.put(idx)
     q_out.put(None)
+# def batch_load_retinanet(coco, bs=8, shuffle=False, seed=None, anchor_np=[1,2,3,4]):
+#   DATA_LEN = len(coco)
+#   BATCH_COUNT = min(32, DATA_LEN//bs)
+#   gen = shuffled_indices(DATA_LEN, seed=seed) if shuffle else iter(range(DATA_LEN))
+
+#   def enqueue_batch(num):
+#     for idx in range(num*bs, (num+1)*bs):
+#       img_idx = next(gen)
+#       q_in.put((idx, img_idx))
+
+#   shutdown = False
+#   class Cookie:
+#     def __init__(self, num): self.num = num
+#     def __del__(self):
+#       if not shutdown:
+#         try: enqueue_batch(self.num)
+#         except StopIteration: pass
+
+#   gotten = [0]*BATCH_COUNT
+#   def receive_batch():
+#     while 1:
+#       num = q_out.get()//bs
+#       gotten[num] += 1
+#       if gotten[num] == bs: break
+#     gotten[num] = 0
+#     return X[num*bs:(num+1)*bs], YB[num*bs:(num+1)*bs], YL[num*bs:(num+1)*bs], YM[num*bs:(num+1)*bs], Cookie(num)
+  
+#   q_in, q_out = Queue(), Queue()
+#   sz = (bs*BATCH_COUNT, 800, 800, 3)
+#   if os.path.exists("/dev/shm/retinanet_X"): os.unlink("/dev/shm/retinanet_X")
+#   shm = shared_memory.SharedMemory(name="retinanet_X", create=True, size=prod(sz))
+#   bsz = (bs*BATCH_COUNT, 120087, 4)
+#   if os.path.exists("/dev/shm/retinanet_YB"): os.unlink("/dev/shm/retinanet_YB")
+#   bshm = shared_memory.SharedMemory(name="retinanet_YB", create=True, size=prod(bsz))
+#   lsz = (bs*BATCH_COUNT, 120087)
+#   if os.path.exists("/dev/shm/retinanet_YL"): os.unlink("/dev/shm/retinanet_YL")
+#   lshm = shared_memory.SharedMemory(name="retinanet_YL", create=True, size=prod(lsz))
+#   msz = (bs*BATCH_COUNT, 120087)
+#   if os.path.exists("/dev/shm/retinanet_YM"): os.unlink("/dev/shm/retinanet_YM")
+#   mshm = shared_memory.SharedMemory(name="retinanet_YM", create=True, size=prod(msz))
+#   procs = []
+
+#   try:
+#     X = Tensor.empty(*sz, dtype=dtypes.uint8, device=f"disk:/dev/shm/retinanet_X")
+#     YB = Tensor.empty(*bsz, dtype=dtypes.float32, device=f"disk:/dev/shm/retinanet_YB")
+#     YL = Tensor.empty(*lsz, dtype=dtypes.int16, device=f"disk:/dev/shm/retinanet_YL")
+#     YM = Tensor.empty(*msz, dtype=dtypes.int64, device=f"disk:/dev/shm/retinanet_YM")
+
+
+#     # for _ in range(cpu_count()):
+#     for _ in range(CPUS):
+#       p = Process(target=loader_process, args=(q_in, q_out, X, seed, coco, YB, YL, YM, anchor_np))
+#       p.daemon = True
+#       p.start()
+#       procs.append(p)
+
+#     for bn in range(BATCH_COUNT): enqueue_batch(bn)
+
+#     # NOTE: this is batch aligned, last ones are ignored
+#     for _ in range(0, DATA_LEN//bs): yield receive_batch()
+#   finally:
+#     shutdown = True
+#     # empty queues
+#     for _ in procs: q_in.put(None)
+#     q_in.close()
+#     for _ in procs:
+#       while q_out.get() is not None: pass
+#     q_out.close()
+#     # shutdown processes
+#     for p in procs: p.join()
+#     shm.close()
+#     shm.unlink()
+#     bshm.close()
+#     bshm.unlink()
+#     lshm.close()
+#     lshm.unlink()
+#     mshm.close()
+#     mshm.unlink()
+
+from multiprocessing import Pool, RawArray
+import numpy as np
+from tinygrad.tensor import Tensor, dtypes
+from tinygrad.helpers import prod
+import random
+from collections import deque
+
+def worker_init(coco, X_raw, YB_raw, YL_raw, YM_raw, shape_X, shape_YB, shape_YL, shape_YM, anchor_np):
+  global shared_coco, shared_X, shared_YB, shared_YL, shared_YM, shared_anchor_np
+  shared_coco = coco
+  shared_X = np.frombuffer(X_raw, dtype=np.uint8).reshape(shape_X)
+  shared_YB = np.frombuffer(YB_raw, dtype=np.float32).reshape(shape_YB)
+  shared_YL = np.frombuffer(YL_raw, dtype=np.int16).reshape(shape_YL)
+  shared_YM = np.frombuffer(YM_raw, dtype=np.int64).reshape(shape_YM)
+  shared_anchor_np = anchor_np
+
+def worker_function(args):
+  buffer_idx, batch_indices, seed = args
+  for i, img_idx in enumerate(batch_indices):
+    random.seed(seed * 2 ** 20 + img_idx)
+    r = random.random() < 0.5
+    img, target = shared_coco[img_idx]
+    img = np.array(resize_img(img))
+    b = target['boxes']
+    if r:
+      img = np.flip(img, axis=1)
+      b[:, [0, 2]] = 800 - b[:, [2, 0]]
+    midx = matcher_iou_func(b, shared_anchor_np)
+    m_temp = np.clip(midx, 0, None)
+    tb = b[m_temp]
+    tl = target['labels'][m_temp]
+
+    shared_X[buffer_idx, i] = img
+    shared_YB[buffer_idx, i] = tb
+    shared_YL[buffer_idx, i] = tl
+    shared_YM[buffer_idx, i] = midx
+  return buffer_idx
+
 def batch_load_retinanet(coco, bs=8, shuffle=False, seed=None, anchor_np=[1,2,3,4]):
   DATA_LEN = len(coco)
-  BATCH_COUNT = min(32, DATA_LEN//bs)
-  gen = shuffled_indices(DATA_LEN, seed=seed) if shuffle else iter(range(DATA_LEN))
+  BUFFER_SIZE = min(32, DATA_LEN // bs)  # Number of batches in the buffer
 
-  def enqueue_batch(num):
-    for idx in range(num*bs, (num+1)*bs):
-      img_idx = next(gen)
-      q_in.put((idx, img_idx))
+  # Create shared memory for the ring buffer
+  X_raw = RawArray('B', prod((BUFFER_SIZE, bs, 800, 800, 3)))
+  YB_raw = RawArray('f', prod((BUFFER_SIZE, bs, 120087, 4)))
+  YL_raw = RawArray('h', prod((BUFFER_SIZE, bs, 120087)))
+  YM_raw = RawArray('q', prod((BUFFER_SIZE, bs, 120087)))
 
-  shutdown = False
-  class Cookie:
-    def __init__(self, num): self.num = num
-    def __del__(self):
-      if not shutdown:
-        try: enqueue_batch(self.num)
-        except StopIteration: pass
+  shape_X = (BUFFER_SIZE, bs, 800, 800, 3)
+  shape_YB = (BUFFER_SIZE, bs, 120087, 4)
+  shape_YL = (BUFFER_SIZE, bs, 120087)
+  shape_YM = (BUFFER_SIZE, bs, 120087)
 
-  gotten = [0]*BATCH_COUNT
-  def receive_batch():
-    while 1:
-      num = q_out.get()//bs
-      gotten[num] += 1
-      if gotten[num] == bs: break
-    gotten[num] = 0
-    return X[num*bs:(num+1)*bs], YB[num*bs:(num+1)*bs], YL[num*bs:(num+1)*bs], YM[num*bs:(num+1)*bs], Cookie(num)
+  # Create numpy arrays from shared memory
+  X_np = np.frombuffer(X_raw, dtype=np.uint8).reshape(shape_X)
+  YB_np = np.frombuffer(YB_raw, dtype=np.float32).reshape(shape_YB)
+  YL_np = np.frombuffer(YL_raw, dtype=np.int16).reshape(shape_YL)
+  YM_np = np.frombuffer(YM_raw, dtype=np.int64).reshape(shape_YM)
+
+  # Create a pool of workers
+  num_workers = min(CPUS, BUFFER_SIZE)
+  pool = Pool(num_workers, initializer=worker_init, 
+              initargs=(coco, X_raw, YB_raw, YL_raw, YM_raw, shape_X, shape_YB, shape_YL, shape_YM, anchor_np))
+
+  rng = random.Random(seed)
+  all_indices = rng.sample(range(DATA_LEN), DATA_LEN) if shuffle else range(DATA_LEN)
   
-  q_in, q_out = Queue(), Queue()
-  sz = (bs*BATCH_COUNT, 800, 800, 3)
-  if os.path.exists("/dev/shm/retinanet_X"): os.unlink("/dev/shm/retinanet_X")
-  shm = shared_memory.SharedMemory(name="retinanet_X", create=True, size=prod(sz))
-  bsz = (bs*BATCH_COUNT, 120087, 4)
-  if os.path.exists("/dev/shm/retinanet_YB"): os.unlink("/dev/shm/retinanet_YB")
-  bshm = shared_memory.SharedMemory(name="retinanet_YB", create=True, size=prod(bsz))
-  lsz = (bs*BATCH_COUNT, 120087)
-  if os.path.exists("/dev/shm/retinanet_YL"): os.unlink("/dev/shm/retinanet_YL")
-  lshm = shared_memory.SharedMemory(name="retinanet_YL", create=True, size=prod(lsz))
-  msz = (bs*BATCH_COUNT, 120087)
-  if os.path.exists("/dev/shm/retinanet_YM"): os.unlink("/dev/shm/retinanet_YM")
-  mshm = shared_memory.SharedMemory(name="retinanet_YM", create=True, size=prod(msz))
-  procs = []
+  # Initialize the ring buffer
+  buffer = deque(maxlen=BUFFER_SIZE)
+  
+  batch_start = 0
+
+  def fill_buffer():
+    nonlocal batch_start
+    while len(buffer) < BUFFER_SIZE and batch_start < DATA_LEN:
+      batch_indices = all_indices[batch_start:batch_start + bs]
+      future = pool.apply_async(worker_function, ((len(buffer), batch_indices, seed),))
+      buffer.append(future)
+      batch_start += bs
+
+  fill_buffer()
 
   try:
-    X = Tensor.empty(*sz, dtype=dtypes.uint8, device=f"disk:/dev/shm/retinanet_X")
-    YB = Tensor.empty(*bsz, dtype=dtypes.float32, device=f"disk:/dev/shm/retinanet_YB")
-    YL = Tensor.empty(*lsz, dtype=dtypes.int16, device=f"disk:/dev/shm/retinanet_YL")
-    YM = Tensor.empty(*msz, dtype=dtypes.int64, device=f"disk:/dev/shm/retinanet_YM")
+    while buffer:
+      # Get the next batch from the buffer
+      future = buffer.popleft()
+      buffer_idx = future.get()  # Wait for the batch to be ready
 
+      # Prepare tensors for the batch
+      X = Tensor(X_np[buffer_idx], dtype=dtypes.uint8)
+      YB = Tensor(YB_np[buffer_idx], dtype=dtypes.float32)
+      YL = Tensor(YL_np[buffer_idx], dtype=dtypes.int16)
+      YM = Tensor(YM_np[buffer_idx], dtype=dtypes.int64)
 
-    # for _ in range(cpu_count()):
-    for _ in range(CPUS):
-      p = Process(target=loader_process, args=(q_in, q_out, X, seed, coco, YB, YL, YM, anchor_np))
-      p.daemon = True
-      p.start()
-      procs.append(p)
+      # Yield the batch
+      yield X, YB, YL, YM
 
-    for bn in range(BATCH_COUNT): enqueue_batch(bn)
+      # Refill the buffer
+      fill_buffer()
 
-    # NOTE: this is batch aligned, last ones are ignored
-    for _ in range(0, DATA_LEN//bs): yield receive_batch()
   finally:
-    shutdown = True
-    # empty queues
-    for _ in procs: q_in.put(None)
-    q_in.close()
-    for _ in procs:
-      while q_out.get() is not None: pass
-    q_out.close()
-    # shutdown processes
-    for p in procs: p.join()
-    shm.close()
-    shm.unlink()
-    bshm.close()
-    bshm.unlink()
-    lshm.close()
-    lshm.unlink()
-    mshm.close()
-    mshm.unlink()
-
+    pool.close()
+    pool.join()
 
 def loader_process_val(q_in, q_out, X:Tensor, seed, coco):
   import signal
@@ -349,7 +452,10 @@ def batch_load_retinanet_val(coco, bs=8, shuffle=False, seed=None):
 
 if __name__ == '__main__':
   BS=60
-  
+  GPUS = [f"{Device.DEFAULT}:{i}" for i in range(getenv("GPUS", 1))]
+  print(f"Training on {GPUS}")
+  for x in GPUS: Device[x]
+
   from extra.models.retinanet import anchor_generator
   feature_shapes = [(100, 100), (50, 50), (25, 25), (13, 13), (7, 7)]
   ANCHORS = anchor_generator((BS,3,800,800), feature_shapes)
@@ -360,8 +466,13 @@ if __name__ == '__main__':
   NAME = 'openimages-mlperf'
   coco = get_openimages(NAME,ROOT, 'train')
 
-  with tqdm(total=len(coco)) as pbar:
-    for x, y, yb, yl, c in batch_load_retinanet(coco, bs=BS, seed=42, anchor_np=ANCHOR_NP):
-      pbar.update(x.shape[0])
+  batch_loader = batch_load_retinanet(coco, bs=BS, seed=42, anchor_np=ANCHOR_NP)
+  it = iter(tqdm(batch_loader, total=len(coco)//BS, desc=f"LOAD TEST"))
+
+  for proc in it:
+    continue
+  # with tqdm(total=len(coco)) as pbar:
+  #   for x, y, yb, yl in batch_load_retinanet(coco, bs=BS, seed=42, anchor_np=ANCHOR_NP):
+  #     pbar.update(x.shape[0])
 
   
