@@ -117,8 +117,10 @@ class RetinaNet:
 
         # keep topk
         topk_idxs = np.where(keep_idxs)[0]
+        # print('SHAPE_CHECL', topk_idxs.shape, keep_idxs.shape, scores_per_level.shape)
         num_topk = min(len(topk_idxs), topk_candidates)
         sort_idxs = scores_per_level.argsort()[-num_topk:][::-1]
+        # print('SORT_IDX', sort_idxs.shape)
         topk_idxs, scores_per_level = topk_idxs[sort_idxs], scores_per_level[sort_idxs]
 
         # bbox coords from offsets
@@ -146,6 +148,69 @@ class RetinaNet:
         keep_mask[curr_indices[curr_keep_indices]] = True
       keep = np.where(keep_mask)[0]
       keep = keep[image_scores[keep].argsort()[::-1]]
+      # resize bboxes back to original size
+      image_boxes = image_boxes[keep]
+      if orig_image_sizes is not None:
+        resized_x = image_boxes[:, 0::2] * orig_image_sizes[i][1] / w
+        resized_y = image_boxes[:, 1::2] * orig_image_sizes[i][0] / h
+        image_boxes = np.stack([resized_x, resized_y], axis=2).reshape(-1, 4)
+      # xywh format
+      image_boxes = np.concatenate([image_boxes[:, :2], image_boxes[:, 2:] - image_boxes[:, :2]], axis=1)
+
+      detections.append({"boxes":image_boxes, "scores":image_scores[keep], "labels":image_labels[keep]})
+    return detections
+
+  # predictions: (BS, (H1W1+...+HmWm)A, 4 + K)
+  def postprocess_detections_tens(self, predictions, input_size=(800, 800), image_sizes=None, orig_image_sizes=None, score_thresh=0.05, topk_candidates=1000, nms_thresh=0.5):
+    anchors = self.anchor_gen(input_size)
+    split_idx = [90000, 22500, 5625, 1521, 441]
+    detections = []
+    for i, predictions_per_image in enumerate(predictions):
+      h, w = input_size if image_sizes is None else image_sizes[i]
+
+      predictions_per_image = Tensor.split(predictions_per_image, split_idx)
+      offsets_per_image = [br[:, :4] for br in predictions_per_image]
+      scores_per_image = [cl[:, 4:] for cl in predictions_per_image]
+
+      image_boxes, image_scores, image_labels = [], [], []
+      for offsets_per_level, scores_per_level, anchors_per_level in zip(offsets_per_image, scores_per_image, anchors):
+        # remove low scoring boxes
+        scores_per_level = scores_per_level.flatten()
+        keep_idxs = np.where((scores_per_level > score_thresh).numpy(False))[0]
+        # print(keep_idxs)
+        scores_per_level = scores_per_level[keep_idxs.tolist()].numpy(False)
+
+        # keep topk
+        topk_idxs = keep_idxs
+        num_topk = min(len(topk_idxs), topk_candidates)
+        sort_idxs = scores_per_level.argsort()[-num_topk:][::-1]
+        topk_idxs, scores_per_level = topk_idxs[sort_idxs], scores_per_level[sort_idxs]
+
+        # bbox coords from offsets
+        anchor_idxs = topk_idxs // self.num_classes
+        labels_per_level = topk_idxs % self.num_classes
+        boxes_per_level = decode_bbox(offsets_per_level[anchor_idxs.tolist()].numpy(False), anchors_per_level[anchor_idxs])
+        # clip to image size
+        clipped_x = boxes_per_level[:, 0::2].clip(0, w)
+        clipped_y = boxes_per_level[:, 1::2].clip(0, h)
+        boxes_per_level = np.stack([clipped_x, clipped_y], axis=2).reshape(-1, 4)
+
+        image_boxes.append(boxes_per_level)
+        image_scores.append(scores_per_level)
+        image_labels.append(labels_per_level)
+
+      image_boxes = np.concatenate(image_boxes)
+      image_scores = np.concatenate(image_scores)
+      image_labels = np.concatenate(image_labels)
+
+      # nms for each class
+      keep_mask = np.zeros_like(image_scores, dtype=bool)
+      for class_id in np.unique(image_labels):
+        curr_indices = np.where(image_labels == class_id)[0]
+        curr_keep_indices = nms(image_boxes[curr_indices], image_scores[curr_indices], nms_thresh)
+        keep_mask[curr_indices[curr_keep_indices]] = True
+      keep = np.where(keep_mask)[0]
+      keep = keep[image_scores[keep].argsort()[::-1]]#
 
       # resize bboxes back to original size
       image_boxes = image_boxes[keep]
