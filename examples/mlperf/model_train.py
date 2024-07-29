@@ -391,6 +391,7 @@ def train_retinanet():
   from examples.mlperf.dataloader import batch_load_retinanet
   from pycocotools.cocoeval import COCOeval
   from pycocotools.coco import COCO
+  import torch
 
   if not TEST:
     train_files = get_retinanet_train_files()
@@ -470,6 +471,8 @@ def train_retinanet():
   def val_step(X):
     Tensor.training = False
     out = model(normalize(X), False)
+    # return out.to(GPUS[0]).realize()
+    return out.cast(dtypes.float32).to(GPUS[0]).realize()
     out = out.cast(dtypes.float32)
     splits = out.split([90000, 22500, 5625, 1521, 441],1)
     offsets = []
@@ -607,11 +610,14 @@ def train_retinanet():
         except StopIteration: next_proc = None
         nt = time.perf_counter()
 
-        offsets = [o.numpy(False) for o in out[:5]]
-        scores = [o.numpy(False) for o in out[5:]]
+        # offsets = [o.numpy(False) for o in out[:5]]
+        # scores = [o.numpy(False) for o in out[5:]]
+        out = torch.from_numpy(out.numpy(False))#.float()
+        # print('OUT', out.device, out.dtype)
         npt = time.perf_counter()
         
-        predictions = model.postprocess_detections(offsets, scores, orig_image_sizes=orig_shapes)
+        # predictions = model.postprocess_detections(offsets, scores, orig_image_sizes=orig_shapes)
+        predictions = retinanet.postprocess_detections_torch(out, orig_image_sizes=orig_shapes, anchors=model.anchors)
         coco_results  = [{"image_id": img_ids[i], "category_id": label, "bbox": box.tolist(),
                           "score": score} for i, prediction in enumerate(predictions)
                           for box, score, label in zip(*prediction.values())]
@@ -627,6 +633,7 @@ def train_retinanet():
         coco_evalimgs.append(np.array(coco_eval.evalImgs).reshape(ncats, narea, len(img_ids)))
         eval_times.append(time.time()-st)
         proc, next_proc = next_proc, None
+        if cnt>30: break
         
         tqdm.write(
           f"{cnt:5} {(ct - st) * 1000.0:7.2f} ms run, {(pt - st) * 1000.0:7.2f} ms model, {(dt - npt) * 1000.0:7.2f} ms postproc, "

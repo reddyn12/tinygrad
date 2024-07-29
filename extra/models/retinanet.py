@@ -8,6 +8,18 @@ from examples.mlperf.losses import sigmoid_focal_loss, l1_loss
 from examples.mlperf.helpers import encode_boxes
 import numpy as np
 import line_profiler
+import torch, torchvision
+from typing import List, Dict, Tuple
+
+TupleOf36Pairs = Tuple[
+    Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int],
+    Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int],
+    Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int],
+    Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int],
+    Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int],
+    Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int], Tuple[int, int]
+]
+
 Conv2dNormal = Conv2d
 Conv2dNormal_priorprob = Conv2d
 Conv2dKaiming = Conv2d
@@ -33,6 +45,27 @@ def nms(boxes, scores, thresh=0.5):
     to_process = to_process[np.where(iou <= thresh)[0]]
   return keep
 
+def nms_torch(boxes:torch.Tensor, scores:torch.Tensor, thresh:float =0.5):
+  return torch.ops.torchvision.nms(boxes.float(), scores.float(), thresh)
+  x1, y1, x2, y2 = boxes[:,0],boxes[:,1],boxes[:,2],boxes[:,3]
+  areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+  to_process, keep = scores.argsort().flip((0,)), []
+  while to_process.numel() > 0:
+    cur, to_process = to_process[0], to_process[1:]
+    keep.append(cur)
+    inter_x1 = torch.maximum(x1[cur], x1[to_process])
+    inter_y1 = torch.maximum(y1[cur], y1[to_process])
+    inter_x2 = torch.minimum(x2[cur], x2[to_process])
+    inter_y2 = torch.minimum(y2[cur], y2[to_process])
+    a1a = inter_x2 - inter_x1 + 1
+    a2a = inter_y2 - inter_y1 + 1
+    a1 = torch.maximum(0, a1a)
+    a2 = torch.maximum(0, a2a)
+    inter_area = a1 * a2
+    iou = inter_area / (areas[cur] + areas[to_process] - inter_area)
+    to_process = to_process[torch.where(iou <= thresh)[0]]
+  return keep
+
 def decode_bbox(offsets, anchors):
   dx, dy, dw, dh = offsets[:,0],offsets[:,1],offsets[:,2],offsets[:,3]
   widths, heights = anchors[:, 2] - anchors[:, 0], anchors[:, 3] - anchors[:, 1]
@@ -42,6 +75,48 @@ def decode_bbox(offsets, anchors):
   pred_x1, pred_y1 = pred_cx - 0.5 * pred_w, pred_cy - 0.5 * pred_h
   pred_x2, pred_y2 = pred_cx + 0.5 * pred_w, pred_cy + 0.5 * pred_h
   return np.stack([pred_x1, pred_y1, pred_x2, pred_y2], axis=1, dtype=np.float32)
+def decode_bbox_torch(rel_codes, boxes, bbox_clip: float =math.log(1000. / 16)):
+  """
+  From a set of original boxes and encoded relative box offsets,
+  get the decoded boxes.
+
+  Args:
+      rel_codes (Tensor): encoded boxes
+      boxes (Tensor): reference boxes.
+  """
+
+  boxes = boxes.to(rel_codes.dtype)
+
+  widths = boxes[:, 2] - boxes[:, 0]
+  heights = boxes[:, 3] - boxes[:, 1]
+  ctr_x = boxes[:, 0] + 0.5 * widths
+  ctr_y = boxes[:, 1] + 0.5 * heights
+
+  # wx, wy, ww, wh = self.weights
+  dx = rel_codes[:, 0::4] #/ wx
+  dy = rel_codes[:, 1::4] #/ wy
+  dw = rel_codes[:, 2::4]# / ww
+  dh = rel_codes[:, 3::4]#/ wh
+
+  # Prevent sending too large values into torch.exp()
+  dw = torch.clamp(dw, max=bbox_clip)
+  dh = torch.clamp(dh, max=bbox_clip)
+
+  pred_ctr_x = dx * widths[:, None] + ctr_x[:, None]
+  pred_ctr_y = dy * heights[:, None] + ctr_y[:, None]
+  pred_w = torch.exp(dw) * widths[:, None]
+  pred_h = torch.exp(dh) * heights[:, None]
+
+  # Distance from center to box's corner.
+  c_to_c_h = torch.tensor(0.5, dtype=pred_ctr_y.dtype, device=pred_h.device) * pred_h
+  c_to_c_w = torch.tensor(0.5, dtype=pred_ctr_x.dtype, device=pred_w.device) * pred_w
+
+  pred_boxes1 = pred_ctr_x - c_to_c_w
+  pred_boxes2 = pred_ctr_y - c_to_c_h
+  pred_boxes3 = pred_ctr_x + c_to_c_w
+  pred_boxes4 = pred_ctr_y + c_to_c_h
+  pred_boxes = torch.stack((pred_boxes1, pred_boxes2, pred_boxes3, pred_boxes4), dim=2).flatten(1)
+  return pred_boxes
 
 def generate_anchors(input_size, grid_sizes, scales, aspect_ratios):
   assert len(scales) == len(aspect_ratios) == len(grid_sizes)
@@ -58,7 +133,7 @@ def generate_anchors(input_size, grid_sizes, scales, aspect_ratios):
     shifts_x = shifts_x.reshape(-1)
     shifts_y = shifts_y.reshape(-1)
     shifts = np.stack([shifts_x, shifts_y, shifts_x, shifts_y], axis=1, dtype=np.float32)
-    anchors.append((shifts[:, None] + base_anchors[None, :]).reshape(-1, 4))
+    anchors.append(torch.from_numpy((shifts[:, None] + base_anchors[None, :]).reshape(-1, 4)))
   return anchors
 
 class RetinaNet:
@@ -72,6 +147,7 @@ class RetinaNet:
     self.backbone = ResNetFPN(backbone)
     self.head = RetinaHead(self.backbone.out_channels, num_anchors=num_anchors, num_classes=num_classes)
     self.anchor_gen = lambda input_size: generate_anchors(input_size, self.backbone.compute_grid_sizes(input_size), scales, aspect_ratios)
+    self.anchors = self.anchor_gen((800,800))
 
   def __call__(self, x, split=False):
     return self.forward(x, split)
@@ -160,7 +236,73 @@ class RetinaNet:
 
       detections.append({"boxes":image_boxes, "scores":image_scores[keep], "labels":image_labels[keep]})
     return detections
+  # predictions: (BS, (H1W1+...+HmWm)A, 4 + K)
+# @torch.jit.script
+def postprocess_detections_torch(predictions, orig_image_sizes:TupleOf36Pairs=tuple([(100,100)]*36), score_thresh:float=0.05, topk_candidates:int=1000, nms_thresh:float =0.5, anchors=None):
+  # anchors = self.anchor_gen(input_size)
+  # grid_sizes = self.backbone.compute_grid_sizes(input_size)
+  # split_idx = np.cumsum([int(self.num_anchors * sz[0] * sz[1]) for sz in grid_sizes[:-1]])
+  split_idx = [90000, 22500, 5625, 1521, 441]
+  detections:List[Dict[str, torch.Tensor]] = []
+  for i, predictions_per_image in enumerate(predictions):
+    # h, w = input_size if image_sizes is None else image_sizes[i]
+    h, w = 800, 800
 
+    # predictions_per_image = np.split(predictions_per_image, split_idx)
+    predictions_per_image = torch.split(predictions_per_image, split_idx)
+    offsets_per_image = [br[:, :4] for br in predictions_per_image]
+    scores_per_image = [cl[:, 4:] for cl in predictions_per_image]
+
+    image_boxes, image_scores, image_labels = [], [], []
+    for offsets_per_level, scores_per_level, anchors_per_level in zip(offsets_per_image, scores_per_image, anchors):
+      # remove low scoring boxes
+      scores_per_level = scores_per_level.flatten()
+      keep_idxs = scores_per_level > score_thresh
+      scores_per_level = scores_per_level[keep_idxs]
+
+      # keep topk
+      topk_idxs = torch.where(keep_idxs)[0]
+      num_topk = min(len(topk_idxs), topk_candidates)
+      sort_idxs = scores_per_level.argsort()[-num_topk:].flip((0,))
+      topk_idxs, scores_per_level = topk_idxs[sort_idxs], scores_per_level[sort_idxs]
+
+      # bbox coords from offsets
+      anchor_idxs = topk_idxs // 264
+      labels_per_level = topk_idxs % 264
+      boxes_per_level = decode_bbox_torch(offsets_per_level[anchor_idxs], anchors_per_level[anchor_idxs])
+      # clip to image size
+      clipped_x = boxes_per_level[:, 0::2].clip(0, w)
+      clipped_y = boxes_per_level[:, 1::2].clip(0, h)
+      boxes_per_level = torch.stack([clipped_x, clipped_y], dim=2).reshape(-1, 4)
+
+      image_boxes.append(boxes_per_level)
+      image_scores.append(scores_per_level)
+      image_labels.append(labels_per_level)
+
+    image_boxes = torch.concatenate(image_boxes)
+    image_scores = torch.concatenate(image_scores)
+    image_labels = torch.concatenate(image_labels)
+
+    # nms for each class
+    keep_mask = torch.zeros_like(image_scores, dtype=torch.bool)
+    for class_id in torch.unique(image_labels):
+      curr_indices = torch.where(image_labels == class_id)[0]
+      curr_keep_indices = nms_torch(image_boxes[curr_indices], image_scores[curr_indices], nms_thresh)
+      keep_mask[curr_indices[curr_keep_indices]] = True
+    keep = torch.where(keep_mask)[0]
+    keep = keep[image_scores[keep].argsort().flip((0,))]
+
+    # resize bboxes back to original size
+    image_boxes = image_boxes[keep]
+    if orig_image_sizes is not None:
+      resized_x = image_boxes[:, 0::2] * orig_image_sizes[i][1] / w
+      resized_y = image_boxes[:, 1::2] * orig_image_sizes[i][0] / h
+      image_boxes = torch.stack([resized_x, resized_y], dim=2).reshape(-1, 4)
+    # xywh format
+    image_boxes = torch.concatenate([image_boxes[:, :2], image_boxes[:, 2:] - image_boxes[:, :2]], dim=1)
+
+    detections.append({"boxes":image_boxes.numpy(), "scores":image_scores[keep].numpy(), "labels":image_labels[keep].numpy()})
+  return detections
 class ClassificationHead:
   def __init__(self, in_channels, num_anchors, num_classes):
     self.num_classes = num_classes
