@@ -1,4 +1,4 @@
-import math
+import math, sys
 from tinygrad import Tensor, dtypes
 from tinygrad.helpers import flatten, get_child
 from tinygrad.nn.state import safe_load, load_state_dict
@@ -133,7 +133,7 @@ def generate_anchors(input_size, grid_sizes, scales, aspect_ratios):
     shifts_x = shifts_x.reshape(-1)
     shifts_y = shifts_y.reshape(-1)
     shifts = np.stack([shifts_x, shifts_y, shifts_x, shifts_y], axis=1, dtype=np.float32)
-    anchors.append(torch.from_numpy((shifts[:, None] + base_anchors[None, :]).reshape(-1, 4)))
+    anchors.append(torch.from_numpy((shifts[:, None] + base_anchors[None, :]).reshape(-1, 4)).to(torch.float16))
   return anchors
 
 class RetinaNet:
@@ -295,8 +295,8 @@ def postprocess_detections_torch(predictions, orig_image_sizes:TupleOf36Pairs=tu
     # resize bboxes back to original size
     image_boxes = image_boxes[keep]
     if orig_image_sizes is not None:
-      resized_x = image_boxes[:, 0::2] * orig_image_sizes[i][1] / w
-      resized_y = image_boxes[:, 1::2] * orig_image_sizes[i][0] / h
+      resized_x = image_boxes[:, 0::2].to(torch.float32) * orig_image_sizes[i][1] / w
+      resized_y = image_boxes[:, 1::2].to(torch.float32) * orig_image_sizes[i][0] / h
       image_boxes = torch.stack([resized_x, resized_y], dim=2).reshape(-1, 4)
     # xywh format
     image_boxes = torch.concatenate([image_boxes[:, :2], image_boxes[:, 2:] - image_boxes[:, :2]], dim=1)

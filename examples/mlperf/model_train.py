@@ -471,7 +471,7 @@ def train_retinanet():
   def val_step(X):
     Tensor.training = False
     out = model(normalize(X), False)
-    # return out.to(GPUS[0]).realize()
+    return out.to(GPUS[0]).realize()
     return out.cast(dtypes.float32).to(GPUS[0]).realize()
     out = out.cast(dtypes.float32)
     splits = out.split([90000, 22500, 5625, 1521, 441],1)
