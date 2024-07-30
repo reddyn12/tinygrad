@@ -633,7 +633,6 @@ def train_retinanet():
         coco_evalimgs.append(np.array(coco_eval.evalImgs).reshape(ncats, narea, len(img_ids)))
         eval_times.append(time.time()-st)
         proc, next_proc = next_proc, None
-        if cnt>30: break
         
         tqdm.write(
           f"{cnt:5} {(ct - st) * 1000.0:7.2f} ms run, {(pt - st) * 1000.0:7.2f} ms model, {(dt - npt) * 1000.0:7.2f} ms postproc, "
