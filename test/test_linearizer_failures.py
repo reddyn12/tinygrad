@@ -341,5 +341,50 @@ class TestLinearizerFailures(unittest.TestCase):
       helper_test_lin(Kernel(ast), opts=opts, failed_platforms=[])
   # END METAL=1 ./examples/beautiful_mnist.py failures
 
+  @unittest.skipIf(CI, "for real AMD GPU")
+  def test_failure_41(self):
+    # One more resnet crash with a page fault on AMD. Checked on rocm6.1.3, -O1 works, -O2 fails
+    ast = LazyOp(MetaOps.KERNEL, arg=None, src=(LazyOp(BufferOps.STORE, arg=MemBuffer(idx=0, dtype=dtypes.half, st=ShapeTracker(views=(View(shape=(256, 1, 128, 28, 28, 1, 1, 1), strides=(100352, 0, 784, 28, 1, 0, 0, 0), offset=0, mask=None, contiguous=True),))), src=(LazyOp(UnaryOps.CAST, arg=dtypes.half, src=(
+       LazyOp(ReduceOps.SUM, arg=(5, 6, 7), src=(
+         LazyOp(UnaryOps.CAST, arg=dtypes.float, src=(
+           LazyOp(BinaryOps.MUL, arg=None, src=(
+             LazyOp(BufferOps.LOAD, arg=MemBuffer(idx=1, dtype=dtypes.half, st=ShapeTracker(views=(View(shape=(1, 256, 1, 128, 4, 58, 4, 58), strides=(0, 401408, 0, 3136, 0, 56, 0, 1), offset=-57, mask=((0, 1), (0, 256), (0, 1), (0, 128), (0, 4), (1, 57), (0, 4), (1, 57)), contiguous=False), View(shape=(256, 1, 128, 28, 28, 128, 3, 3), strides=(6889472, 0, 0, 464, 2, 53824, 13688, 59), offset=0, mask=None, contiguous=False)))), src=()), LazyOp(BufferOps.LOAD, arg=MemBuffer(idx=2, dtype=dtypes.half, st=ShapeTracker(views=(View(shape=(256, 1, 128, 28, 28, 128, 3, 3), strides=(0, 0, 1152, 0, 0, 9, 3, 1), offset=0, mask=None, contiguous=False),))), src=()),)),)),)),)),)),))
+    opts=[Opt(op=OptOps.TC, axis=5, amt=2), Opt(op=OptOps.UNROLL, axis=0, amt=0)]
+    helper_test_lin(Kernel(ast), opts=opts, failed_platforms=["AMD", "HIP"])
+
+  # llama3 8B failure with BEAM=2 https://github.com/tinygrad/tinygrad/actions/runs/10150118124/job/28066519425#step:14:1, these don't compile
+  @unittest.expectedFailure
+  @unittest.skipUnless(Device[Device.DEFAULT].renderer.has_local, "test needs local")
+  @unittest.skipUnless(Device[Device.DEFAULT].renderer.has_shared, "test needs shared")
+  def test_failure_42(self):
+    ast = LazyOp(MetaOps.KERNEL, arg=None, src=(
+  LazyOp(BufferOps.STORE, arg=MemBuffer(idx=0, dtype=dtypes.float, st=ShapeTracker(views=(View(shape=(25, 1), strides=(1, 0), offset=0, mask=None, contiguous=True),))), src=(
+    LazyOp(ReduceOps.SUM, arg=(1,), src=(
+      LazyOp(BufferOps.LOAD, arg=MemBuffer(idx=1, dtype=dtypes.float, st=ShapeTracker(views=(View(shape=(26, 49), strides=(0, -1), offset=48, mask=((0, 26), (24, 49)), contiguous=False), View(shape=(25, 25), strides=(1, 50), offset=0, mask=None, contiguous=False)))), src=()),)),)),))
+    opts = [Opt(op=OptOps.GROUP, axis=0, amt=0), Opt(op=OptOps.PADTO, axis=0, amt=32), Opt(op=OptOps.UPCAST, axis=0, amt=2), Opt(op=OptOps.PADTO, axis=0, amt=32)]
+    helper_test_lin(Kernel(ast), opts=opts, failed_platforms=[])
+
+  @unittest.expectedFailure
+  @unittest.skipUnless(Device[Device.DEFAULT].renderer.has_local, "test needs local")
+  @unittest.skipUnless(Device[Device.DEFAULT].renderer.has_shared, "test needs shared")
+  def test_failure_43(self):
+    ast = LazyOp(MetaOps.KERNEL, arg=None, src=(
+  LazyOp(BufferOps.STORE, arg=MemBuffer(idx=0, dtype=dtypes.float, st=ShapeTracker(views=(View(shape=(25, 1), strides=(1, 0), offset=0, mask=None, contiguous=True),))), src=(
+    LazyOp(ReduceOps.SUM, arg=(1,), src=(
+      LazyOp(BufferOps.LOAD, arg=MemBuffer(idx=1, dtype=dtypes.float, st=ShapeTracker(views=(View(shape=(26, 49), strides=(0, -1), offset=48, mask=((0, 26), (24, 49)), contiguous=False), View(shape=(25, 25), strides=(1, 50), offset=0, mask=None, contiguous=False)))), src=()),)),)),))
+    opts = [Opt(op=OptOps.GROUP, axis=0, amt=0), Opt(op=OptOps.PADTO, axis=0, amt=32), Opt(op=OptOps.LOCAL, axis=0, amt=4), Opt(op=OptOps.UPCAST, axis=0, amt=0)]
+    helper_test_lin(Kernel(ast), opts=opts, failed_platforms=[])
+
+  @unittest.expectedFailure
+  @unittest.skipUnless(Device[Device.DEFAULT].renderer.has_local, "test needs local")
+  @unittest.skipUnless(Device[Device.DEFAULT].renderer.has_shared, "test needs shared")
+  def test_failure_44(self):
+    ast = LazyOp(MetaOps.KERNEL, arg=None, src=(
+  LazyOp(BufferOps.STORE, arg=MemBuffer(idx=0, dtype=dtypes.float, st=ShapeTracker(views=(View(shape=(25, 1), strides=(1, 0), offset=0, mask=None, contiguous=True),))), src=(
+    LazyOp(ReduceOps.SUM, arg=(1,), src=(
+      LazyOp(BufferOps.LOAD, arg=MemBuffer(idx=1, dtype=dtypes.float, st=ShapeTracker(views=(View(shape=(26, 49), strides=(0, -1), offset=48, mask=((0, 26), (24, 49)), contiguous=False), View(shape=(25, 25), strides=(1, 50), offset=0, mask=None, contiguous=False)))), src=()),)),)),))
+    opts = [Opt(op=OptOps.GROUP, axis=0, amt=0), Opt(op=OptOps.PADTO, axis=0, amt=32), Opt(op=OptOps.LOCAL, axis=0, amt=4), Opt(op=OptOps.UPCAST, axis=0, amt=4)]
+    helper_test_lin(Kernel(ast), opts=opts, failed_platforms=[])
+
 if __name__ == '__main__':
   unittest.main()
