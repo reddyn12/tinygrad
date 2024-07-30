@@ -520,7 +520,7 @@ def batch_load_retinanet(batch_size=64, val=False, shuffle=False, seed=42, pad_f
     else:
       Y = [None] * (batch_size*BATCH_COUNT)
       YS = [None] * (batch_size*BATCH_COUNT)
-    for _ in range(cpu_count()):
+    for _ in range(10 if val else cpu_count()):
       if val:
         p = Process(target=loader_process_retinanet_val, args=(q_in, q_out, seed, X))
       else:
