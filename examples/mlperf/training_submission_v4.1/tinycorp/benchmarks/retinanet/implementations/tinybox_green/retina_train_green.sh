@@ -13,6 +13,6 @@ export PART_BATCH=1
 # Download dataset if missing
 python3 extra/datasets/openimages.py
 
-# TRAIN_ONLY=1 python3 examples/mlperf/model_train.py
+python3 examples/mlperf/model_train.py
 
-EVAL_ONLY=1 python3 examples/mlperf/model_train.py
+# EVAL_ONLY=1 python3 examples/mlperf/model_train.py
