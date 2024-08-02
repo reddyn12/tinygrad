@@ -593,6 +593,8 @@ def train_retinanet():
       batch_loader = batch_load_retinanet(batch_size=BS_EVAL, shuffle=False, seed=SEED, val=True)
       it = iter(tqdm(batch_loader, total=len(val_files)//BS_EVAL, desc=f"epoch_val {epoch}"))
       cnt, proc = 0, data_get_val(it)
+      
+      np_placeholder = np.zeros((BS_EVAL, 120087, 268), dtype=np.float16)
 
       while proc is not None:
         coco_eval = COCOeval(coco_val, iouType="bbox")
@@ -612,7 +614,8 @@ def train_retinanet():
 
         # offsets = [o.numpy(False) for o in out[:5]]
         # scores = [o.numpy(False) for o in out[5:]]
-        out = torch.from_numpy(out.numpy(False))#.float()
+        out.lazydata.base.realized.copyout(np_placeholder.data)
+        out = torch.from_numpy(np_placeholder)#.float()
         # print('OUT', out.device, out.dtype)
         npt = time.perf_counter()
         
@@ -633,6 +636,7 @@ def train_retinanet():
         coco_evalimgs.append(np.array(coco_eval.evalImgs).reshape(ncats, narea, len(img_ids)))
         eval_times.append(time.time()-st)
         proc, next_proc = next_proc, None
+        # if cnt>30: break
         
         tqdm.write(
           f"{cnt:5} {(ct - st) * 1000.0:7.2f} ms run, {(pt - st) * 1000.0:7.2f} ms model, {(dt - npt) * 1000.0:7.2f} ms postproc, "
