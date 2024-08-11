@@ -241,6 +241,10 @@ class TestUint8DType(TestDType):
 
 @unittest.skipIf(Device.DEFAULT == "WEBGL", "No bitcast on WebGL")
 class TestBitCast(unittest.TestCase):
+  def simple(self):
+    a = Tensor.ones((3, 40), dtype=dtypes.float32).contiguous().bitcast(dtypes.int8).realize()
+    b = np.ones((3,40), np.float32).view(np.int8)
+    np.testing.assert_equal(a.numpy(), b)
   def test_fp32_to_uint8(self):
     _test_bitcast(Tensor([100000], dtype=dtypes.float32), dtypes.uint8)
     _test_bitcast(Tensor.randn((3,40), dtype=dtypes.float32), dtypes.uint8)
