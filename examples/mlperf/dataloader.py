@@ -359,6 +359,7 @@ def loader_process_retinanet(q_in, q_out, seed, X:Tensor, YB:Tensor, YL:Tensor, 
 
   from extra.datasets.openimages import preprocess_train
   from examples.mlperf.helpers import matcher_iou_func, resize_boxes_np
+  from PIL import Image
   
   with Context(DEBUG=0):
     while (_recv := q_in.get()) is not None:
@@ -409,6 +410,7 @@ def loader_process_retinanet_val(q_in, q_out, seed, X:Tensor):
   signal.signal(signal.SIGINT, lambda _, __: exit(0))
 
   from extra.datasets.openimages import preprocess_train
+  from PIL import Image
   
   with Context(DEBUG=0):
     while (_recv := q_in.get()) is not None:
@@ -427,7 +429,7 @@ def loader_process_retinanet_val(q_in, q_out, seed, X:Tensor):
       q_out.put(idx)
     q_out.put(None)
 
-def batch_load_retinanet(batch_size=64, val=False, shuffle=False, seed=42, pad_first_batch=False, anchor_np=[1,2,3,4]):
+def batch_load_retinanet(batch_size=64, val=False, shuffle=False, seed=42, pad_first_batch=False, anchor_np=[1,2,3,4], shift=''):
   from extra.datasets.openimages import get_retinanet_train_files, get_retinanet_val_files, get_train_data, get_val_data
   files = get_retinanet_val_files() if val else get_retinanet_train_files()
   data_dict = get_val_data() if val else get_train_data()
@@ -496,30 +498,30 @@ def batch_load_retinanet(batch_size=64, val=False, shuffle=False, seed=42, pad_f
   q_in, q_out = Queue(), Queue()
 
   sz = (batch_size*BATCH_COUNT, 800, 800, 3)
-  Path('/dev/shm/retinanet_X').unlink(True)
-  shm = shared_memory.SharedMemory(name="retinanet_X", create=True, size=prod(sz))
+  Path(f'/dev/shm/retinanet_X{shift}').unlink(True)
+  shm = shared_memory.SharedMemory(name=f"retinanet_X{shift}", create=True, size=prod(sz))
   if not val:
     bsz = (batch_size*BATCH_COUNT, 120087, 4)
     Path('/dev/shm/retinanet_YB').unlink(True)
-    bshm = shared_memory.SharedMemory(name="retinanet_YB", create=True, size=prod(bsz))
+    bshm = shared_memory.SharedMemory(name=f"retinanet_YB{shift}", create=True, size=prod(bsz))
     lsz = (batch_size*BATCH_COUNT, 120087)
     Path('/dev/shm/retinanet_YL').unlink(True)
-    lshm = shared_memory.SharedMemory(name="retinanet_YL", create=True, size=prod(lsz))
+    lshm = shared_memory.SharedMemory(name=f"retinanet_YL{shift}", create=True, size=prod(lsz))
     msz = (batch_size*BATCH_COUNT, 120087)
     Path('/dev/shm/retinanet_YM').unlink(True)
-    mshm = shared_memory.SharedMemory(name="retinanet_YM", create=True, size=prod(msz))
+    mshm = shared_memory.SharedMemory(name=f"retinanet_YM{shift}", create=True, size=prod(msz))
   procs = []
 
   try:
-    X = Tensor.empty(*sz, dtype=dtypes.uint8, device=f"disk:/dev/shm/retinanet_X")
+    X = Tensor.empty(*sz, dtype=dtypes.uint8, device=f"disk:/dev/shm/retinanet_X{shift}")
     if not val:
-      YB = Tensor.empty(*bsz, dtype=dtypes.float32, device=f"disk:/dev/shm/retinanet_YB")
-      YL = Tensor.empty(*lsz, dtype=dtypes.int16, device=f"disk:/dev/shm/retinanet_YL")
-      YM = Tensor.empty(*msz, dtype=dtypes.int64, device=f"disk:/dev/shm/retinanet_YM")
+      YB = Tensor.empty(*bsz, dtype=dtypes.float32, device=f"disk:/dev/shm/retinanet_YB{shift}")
+      YL = Tensor.empty(*lsz, dtype=dtypes.int16, device=f"disk:/dev/shm/retinanet_YL{shift}")
+      YM = Tensor.empty(*msz, dtype=dtypes.int64, device=f"disk:/dev/shm/retinanet_YM{shift}")
     else:
       Y = [None] * (batch_size*BATCH_COUNT)
       YS = [None] * (batch_size*BATCH_COUNT)
-    for _ in range(cpu_count()):
+    for _ in range(10 if val else cpu_count()):
       if val:
         p = Process(target=loader_process_retinanet_val, args=(q_in, q_out, seed, X))
       else:

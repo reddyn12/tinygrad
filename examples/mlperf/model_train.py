@@ -548,7 +548,7 @@ def train_retinanet():
       eval_times = []
       coco_evalimgs, evaluated_imgs, ncats, narea = [], [], len(coco_eval.params.catIds), len(coco_eval.params.areaRng)
 
-      batch_loader = batch_load_retinanet(batch_size=BS_EVAL, shuffle=False, seed=SEED, val=True, pad_first_batch=PART_BATCH)
+      batch_loader = batch_load_retinanet(batch_size=BS_EVAL, shuffle=False, seed=SEED, val=True, pad_first_batch=PART_BATCH, shift=f'_{SHIFT}' if EVAL_ONLY else '')
       it = iter(tqdm(batch_loader, total=len(val_files)//BS_EVAL, desc=f"epoch_val {SHIFT if EVAL_ONLY else epoch}"))
       cnt, proc = 0, data_get_val(it)
 
@@ -618,7 +618,10 @@ def train_retinanet():
       if WANDB:
           wandb.log({"eval/acc": eval_acc, "eval/total_time": eval_time, "epoch": SHIFT if EVAL_ONLY else epoch})
       if getenv("RESET_STEP", 1): val_step.reset()
-      if EVAL_ONLY: break
+      if EVAL_ONLY: 
+        if WANDB:
+          wandb.finish()
+          break
       if eval_acc>MAP_TARGET:
         print('SUCCESSFULLY TRAINED TO TARGET: EPOCH', epoch, eval_acc)
         break
