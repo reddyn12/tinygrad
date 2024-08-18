@@ -112,12 +112,13 @@ class Attention:
 class SwiGLU:
   def __init__(self, dim):
     self.w1 = nn.Linear(dim, 4*dim, bias=False)
-    self.w3 = nn.Linear(dim, 4*dim, bias=False)
-    self.w2 = nn.Linear(4*dim, dim, bias=False)
+    self.w2 = nn.Linear(dim, 4*dim, bias=False)
+    self.w3 = nn.Linear(4*dim, dim, bias=False)
   def __call__(self, x:Tensor):
-    return self.w2(self.w1(x).silu() * self.w3(x))
+    return self.w3(self.w1(x).silu() * self.w2(x))
 # %%
 from examples.mamba import MambaMixer
+from tinygrad.nn.state import load_state_dict
 class SambaLayer:
   def __init__(self, dim, layer_idx):
     self.layer_idx = layer_idx
@@ -153,10 +154,24 @@ class Samba:
     out = out.sequential(self.layers)
     out = self.ln_f(out)
     return self.lm_head(out)
-t = Samba(1024, 8, 8, 12345)
+t = Samba(1024, 8, 8, 128256)
 print(len(nn.state.get_state_dict(t).keys()))
-for k,v in nn.state.get_state_dict(t).items():
+# for k,v in nn.state.get_state_dict(t).items():
+#   print(k, v.shape)
+tens_weigts = {}
+for k,v in d['model'].items():
   print(k, v.shape)
+  if 'transformer.wte' in k:
+    tens_weigts[k.replace('transformer.wte', 'wte')] = Tensor(v.cpu().numpy())
+  elif 'transformer.h' in k:
+    tens_weigts[k.replace('transformer.h', 'layers').replace('mlp.swiglu', 'swiglu')] = Tensor(v.cpu().numpy())
+  elif 'transformer.ln_f' in k:
+    tens_weigts[k.replace('transformer.ln_f', 'ln_f')] = Tensor(v.cpu().numpy())
+  else:
+    tens_weigts[k] = Tensor(v.cpu().numpy())
+for k,v in tens_weigts.items():
+  print(k, v.shape)
+load_state_dict(t, tens_weigts)
 # %%
 tens = (Tensor.arange(10)+100).reshape(1, -1)
 out = t(tens)
