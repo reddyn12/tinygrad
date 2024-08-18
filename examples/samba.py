@@ -3,7 +3,7 @@ from tinygrad.helpers import fetch
 from tinygrad.nn.state import torch_load
 import pickle
 import torch
-path = fetch('https://ml-modelstore-public.s3.ap-northeast-2.amazonaws.com/iter-1003200-ckpt.pth', 'samba_weights.pth')
+path = fetch('https://ml-modelstore-public.s3.ap-northeast-2.amazonaws.com/iter-1003200-ckpt.pth', 'samba_weights.pth', '/raid/weights/')
 print('path: ', path)
 d = torch.load(path)
 print(d.keys())
@@ -11,7 +11,7 @@ print(len(d['model'].keys()))
 
 # %%
 for k,v in d['model'].items():
-  print(k, v.shape)
+  print(k, v.shape, v.dtype)
 # %%
 d['optimizer'].keys()
 # %%
@@ -51,7 +51,7 @@ def sliding_window_attention(query:Tensor, key:Tensor, value:Tensor, window_size
     attn_weights.append(window_attn)
 
   # concatenate attention weights from each window
-  attn = torch.cat(attn_weights, dim=2)
+  attn = Tensor.cat(*attn_weights, dim=2)
 
   return attn
 class Attention:
@@ -79,14 +79,14 @@ class Attention:
 
     # xq, xk = apply_rotary_emb(xq, xk, freqs_cis)
     
-    freq_constant = 10000
-    inv_freq = 1.0 / (freq_constant ** (Tensor.arange(0, self.head_dim, 2) / self.head_dim))
-    pos_index_theta = Tensor.einsum("i,j->ij", Tensor.arange(seq_len), inv_freq)
-    emb = Tensor.cat(pos_index_theta, pos_index_theta, dim=-1)
-    cos_emb, sin_emb = emb.cos()[None, None, :, :], emb.sin()[None, None, :, :]
-    print('ROPE:', emb.shape, cos_emb.shape, sin_emb.shape)
-    xq = _apply_rotary_pos_emb(xq, sin_emb, cos_emb)
-    xk = _apply_rotary_pos_emb(xk, sin_emb, cos_emb)
+    # freq_constant = 10000
+    # inv_freq = 1.0 / (freq_constant ** (Tensor.arange(0, self.head_dim, 2) / self.head_dim))
+    # pos_index_theta = Tensor.einsum("i,j->ij", Tensor.arange(seq_len), inv_freq)
+    # emb = Tensor.cat(pos_index_theta, pos_index_theta, dim=-1)
+    # cos_emb, sin_emb = emb.cos()[None, None, :, :], emb.sin()[None, None, :, :]
+    # print('ROPE:', emb.shape, cos_emb.shape, sin_emb.shape)
+    # xq = _apply_rotary_pos_emb(xq, sin_emb, cos_emb)
+    # xk = _apply_rotary_pos_emb(xk, sin_emb, cos_emb)
 
     # create kv cache
     if not hasattr(self, "cache_kv"):
@@ -112,17 +112,17 @@ class Attention:
 class SwiGLU:
   def __init__(self, dim):
     self.w1 = nn.Linear(dim, 4*dim, bias=False)
-    self.w2 = nn.Linear(dim, 4*dim, bias=False)
-    self.w3 = nn.Linear(4*dim, dim, bias=False)
+    self.w3 = nn.Linear(dim, 4*dim, bias=False)
+    self.w2 = nn.Linear(4*dim, dim, bias=False)
   def __call__(self, x:Tensor):
-    self.w2(self.w1(x).silu() * self.w3(x))
+    return self.w2(self.w1(x).silu() * self.w3(x))
 # %%
 from examples.mamba import MambaMixer
 class SambaLayer:
   def __init__(self, dim, layer_idx):
     self.layer_idx = layer_idx
     self.norm_1 = nn.RMSNorm(dim)
-    if layer_idx%2==1:
+    if layer_idx%2==0:
       self.attn = MambaMixer(dim)
     else:
       self.attn = Attention(dim, 8, 8, 4092, 2048)
@@ -130,16 +130,16 @@ class SambaLayer:
     self.swiglu = SwiGLU(dim)
   def __call__(self, x:Tensor):
     print('LAYER_IDX', self.layer_idx)
-    out = self.norm_1(x)
-    if self.layer_idx%2==1:
-      h = self.attn(out)
+    n_1 = self.norm_1(x)
+    if self.layer_idx%2==0:
+      h = self.attn(n_1)
     else:
-      h = self.attn(out, 0)
+      h = self.attn(n_1, 0)
     
     x = x + h
-    out = self.norm_2(x)
-    out = self.swiglu(out)
-    x = x + out
+    n_2 = self.norm_2(x)
+    h = self.swiglu(n_2)
+    x = x + h
     return x
     
 class Samba:
@@ -150,9 +150,7 @@ class Samba:
     self.ln_f = nn.RMSNorm(dim)
   def __call__(self, x:Tensor):
     out = self.wte(x)
-    # out = out.sequential(self.layers)
-    for l in self.layers:
-      out = l(out)
+    out = out.sequential(self.layers)
     out = self.ln_f(out)
     return self.lm_head(out)
 t = Samba(1024, 8, 8, 12345)
