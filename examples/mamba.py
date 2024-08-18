@@ -20,7 +20,7 @@ MODELS = {
 def fetch_weights(model_name: str) -> Dict[str, Tensor]:
   if model_name not in MODELS:
     raise ValueError(f"Requested unknown mamba model: {model_name}")
-  downloaded = fetch(f"https://huggingface.co/state-spaces/mamba-{model_name}/resolve/main/pytorch_model.bin?download=true")
+  downloaded = fetch(f"https://huggingface.co/state-spaces/mamba-{model_name}/resolve/main/pytorch_model.bin?download=true", subdir='/raid/weights/')
   return torch_load(downloaded)
 
 def selective_scan_ref(
@@ -223,6 +223,7 @@ class MambaBlock:
       raise NotImplementedError
 
   def __call__(self, hidden_states: Tensor, residual: Optional[Tensor] = None):
+    # print(hidden_states, residual)
     residual = (hidden_states + residual) if residual is not None else hidden_states
     hidden_states = self.norm(residual)
     hidden_states = self.mixer(hidden_states)
@@ -237,6 +238,7 @@ class MambaBackbone:
 
   def __call__(self, input_ids: Tensor) -> Any:
     hidden_states = self.embedding(input_ids)
+    print(hidden_states, input_ids)
     residual = None
     for layer in self.layers:
       hidden_states, residual = layer(hidden_states, residual)
@@ -257,6 +259,7 @@ class Mamba:
 
   def forward(self, input_ids:Tensor):
     hidden_states = self.backbone(input_ids)
+    sys.exit()
     return self.lm_head(hidden_states).realize()
 
   def __call__(self, input_ids):
@@ -275,6 +278,8 @@ def generate(model, tokenizer, prompt: str, n_tokens_to_gen: int = 10, temp: boo
   tks = tokenizer(prompt)["input_ids"]
   while len(tks) < 4:
     tks = [50279] + tks
+  print(tks)
+  # sys.exit()
 
   # Loading in the prompt tokens
   logits = model.forward(Tensor([tks]))[:, -1, :]
@@ -304,6 +309,10 @@ if __name__ == "__main__":
 
   tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
   model = Mamba.from_pretrained(args.size)
+  # from tinygrad.nn.state import get_state_dict
+  # for k,v in get_state_dict(model).items():
+  #   print(k, v.shape)
+  # sys.exit()
   prompt = args.prompt
   num_toks = args.n_tokens
   sample = args.sample
