@@ -9,6 +9,15 @@ d = torch.load(path)
 print(d.keys())
 print(len(d['model'].keys()))
 
+#%%
+from transformers import AutoTokenizer
+
+tokenizer_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+prompt = 'This is a test prompt that '
+inputs = tokenizer.encode(prompt)
+print(inputs)
+
 # %%
 for k,v in d['model'].items():
   print(k, v.shape, v.dtype)
@@ -173,7 +182,16 @@ for k,v in tens_weigts.items():
   print(k, v.shape)
 load_state_dict(t, tens_weigts)
 # %%
-tens = (Tensor.arange(10)+100).reshape(1, -1)
+# tens = (Tensor.arange(10)+100).reshape(1, -1)
+tens = Tensor([tokenizer.encode('Velocity is the derivative of position because ')])
+print(tens.shape)
 out = t(tens)
 print(out.shape)
+logits = out[:, -1, :]
+print(logits.shape)
+# %%
+tok = logits.softmax(-1).multinomial()
+tok_str = tokenizer.decode(tok.item())
+print('GEN_TOK: ', tok_str)
+
 # %%
