@@ -118,20 +118,20 @@ class Attention:
     # freq_cis = precompute_freqs_cis(128, 4096, dtype=dtypes.float32)[:, start_pos:start_pos+T]
     # q, keys = apply_rotary_emb_new(q, keys, freq_cis)
 
-    # if not hasattr(self, "cache_kv"):
-    #   self.cache_kv = Tensor.zeros(2, B, self.max_context, self.n_kv_heads, self.head_dim, dtype=x.dtype).contiguous().realize()
-    #   if isinstance(x.device, tuple):
-    #     # TODO: instead of specifying how to shard, it can follow how xk and xv are being sharded
-    #     self.cache_kv.shard_((x.device), axis=3 if getenv("SHARD_KVCACHE") else None).realize()
+    if not hasattr(self, "cache_kv"):
+      self.cache_kv = Tensor.zeros(2, B, self.max_context, self.n_kv_heads, self.head_dim, dtype=x.dtype).contiguous().realize()
+      if isinstance(x.device, tuple):
+        # TODO: instead of specifying how to shard, it can follow how xk and xv are being sharded
+        self.cache_kv.shard_((x.device), axis=3 if getenv("SHARD_KVCACHE") else None).realize()
 
-    # # update the cache
-    # assert k.dtype == v.dtype == self.cache_kv.dtype, f"{k.dtype=}, {v.dtype=}, {self.cache_kv.dtype=}"
-    # self.cache_kv.shrink((None, None, (start_pos, start_pos+T), None, None)).assign(Tensor.stack(k, v)).realize()
+    # update the cache
+    assert k.dtype == v.dtype == self.cache_kv.dtype, f"{k.dtype=}, {v.dtype=}, {self.cache_kv.dtype=}"
+    self.cache_kv.shrink((None, None, (start_pos, start_pos+T), None, None)).assign(Tensor.stack(k, v)).realize()
 
-    # keys = self.cache_kv[0].shrink((None, (0, start_pos+T), None, None)) if start_pos > 0 else k
-    # values = self.cache_kv[1].shrink((None, (0, start_pos+T), None, None)) if start_pos > 0 else v
+    keys = self.cache_kv[0].shrink((None, (0, start_pos+T), None, None)) if start_pos > 0 else k
+    values = self.cache_kv[1].shrink((None, (0, start_pos+T), None, None)) if start_pos > 0 else v
     q, keys, values = q.transpose(1, 2), keys.transpose(1, 2), values.transpose(1, 2)
-    y = q.scaled_dot_product_attention(keys, values, is_causal=True, attn_mask=mask).transpose(1, 2)
+    y = q.scaled_dot_product_attention(keys, values, is_causal=T>1, attn_mask=mask).transpose(1, 2)
     y = y.reshape(B, T, -1)
     return self.proj(y)
     # bsz, seq_len, embed_dim = x.shape
@@ -216,7 +216,7 @@ class SambaLayer:
     n_1 = self.norm_1(x)
     if self.layer_idx%2==0:
       h = self.attn(n_1)
-      delattr(self.attn, 'conv_state')
+      # delattr(self.attn, 'conv_state')
     else:
       seqlen = x.shape[1]
       # mask = Tensor.full((1, 1, seqlen, start_pos+seqlen), float("-inf")).triu(start_pos+1).realize() if seqlen > 1 else None
@@ -267,9 +267,9 @@ load_state_dict(t, tens_weigts)
 prompt_tok = tokenizer.encode("1,2,3,4,5,6,")
 sp = 0
 for i in range(30):
-  # tens = Tensor([prompt_tok[sp:]])
-  sp=0
-  tens = Tensor([prompt_tok], dtype=dtypes.int64)
+  tens = Tensor([prompt_tok[sp:]])
+  # sp=0
+  # tens = Tensor([prompt_tok], dtype=dtypes.int64)
   # if i<4: print('encode_TENS', tens.dtype, tens.shape, tens.numpy())
   out = t(tens, sp)
   # print('out',out.shape)
