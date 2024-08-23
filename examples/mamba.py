@@ -238,7 +238,6 @@ class MambaBackbone:
 
   def __call__(self, input_ids: Tensor) -> Any:
     hidden_states = self.embedding(input_ids)
-    print(hidden_states, input_ids)
     residual = None
     for layer in self.layers:
       hidden_states, residual = layer(hidden_states, residual)
@@ -259,7 +258,6 @@ class Mamba:
 
   def forward(self, input_ids:Tensor):
     hidden_states = self.backbone(input_ids)
-    sys.exit()
     return self.lm_head(hidden_states).realize()
 
   def __call__(self, input_ids):
