@@ -115,7 +115,7 @@ class Attention:
     k = k.reshape(B,  T, -1, self.head_dim)#.transpose(1, 2)  
     v = v.reshape(B,  T, -1, self.head_dim)#.transpose(1, 2)
     keys, values = k, v
-    # freq_cis = precompute_freqs_cis(128, T).cast(dtypes.float32)
+    # freq_cis = precompute_freqs_cis(128, 4096, dtype=dtypes.float32)[:, start_pos:start_pos+T]
     # q, keys = apply_rotary_emb_new(q, keys, freq_cis)
 
     # if not hasattr(self, "cache_kv"):
@@ -266,10 +266,11 @@ load_state_dict(t, tens_weigts)
 # <|begin_of_text|>1,2,3,4,5,6,7,8,8,9,10,11,12,13,14,15,16,17,17,17,19,19,21,21,21,22,22,22,23,23,23,23,24,24,24,24,25,25,25,25,25,25,26,26,26,26
 prompt_tok = tokenizer.encode("1,2,3,4,5,6,")
 sp = 0
-for i in range(40):
+for i in range(30):
   # tens = Tensor([prompt_tok[sp:]])
-  tens = Tensor([prompt_tok])
-  # print('encode_TENS', tens.shape, tens.numpy())
+  sp=0
+  tens = Tensor([prompt_tok], dtype=dtypes.int64)
+  # if i<4: print('encode_TENS', tens.dtype, tens.shape, tens.numpy())
   out = t(tens, sp)
   # print('out',out.shape)
   logits = out[:, -1, :]
