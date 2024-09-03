@@ -119,7 +119,8 @@ class Samba:
 
   def load_model(self):
     import torch
-    path = fetch('https://ml-modelstore-public.s3.ap-northeast-2.amazonaws.com/iter-1003200-ckpt.pth', 'samba_weights.pth', '/raid/weights/')
+    # path = fetch('https://ml-modelstore-public.s3.ap-northeast-2.amazonaws.com/iter-1003200-ckpt.pth')
+    path = fetch('https://ml-modelstore-public.s3.ap-northeast-2.amazonaws.com/samba_instruct.pth')
     print('path: ', path)
     d = torch.load(path, weights_only=True)
     print(d.keys())
@@ -141,7 +142,11 @@ class Samba:
     tokenizer_name = "meta-llama/Meta-Llama-3-8B-Instruct"
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     return tokenizer
-
+def llama3_prompt_format(text):
+    prompt = f"""<|start_header_id|>user<|end_header_id|>
+{text}<|eot_id|>
+<|start_header_id|>assistant<|end_header_id|>"""
+    return prompt
 if __name__ == '__main__':
   samba = Samba(1024, 8, 8, 128256, 4096, 2048)
 
@@ -150,6 +155,7 @@ if __name__ == '__main__':
   # REF_NOPE
   # <|begin_of_text|>1,2,3,4,5,6,7,8,8,9,10,11,12,13,14,15,16,17,17,17,19,19,21,21,21,22,22,22,23,23,23,23,24,24,24,24,25,25,25,25,25,25,26,26,26,26
   prompt = "1,2,3,4,5,6,"
+  prompt = llama3_prompt_format('Why is the sky blue?')
   output = prompt
   prompt_tok = tokenizer.encode(prompt)
   sp = 0
@@ -161,11 +167,12 @@ if __name__ == '__main__':
     else: out = samba(tens, sp)
     logits = out[:, -1, :]
     tok = logits.softmax(-1).argmax()
-    tok_str = tokenizer.decode(tok.item())
+    tok_str = tokenizer.decode(tok_item := tok.item())
     # print('GEN_TOK: ', tok_str, '||', tok.item())
     output+=tok_str
     bar.set_description(f'GEN_TOK: {tok_str}||')
 
     sp = len(prompt_tok)
     prompt_tok.append(tok.item())
+    if tok_item==128001: break
   print(output)
