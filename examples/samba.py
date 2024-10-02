@@ -9,6 +9,7 @@ from examples.mamba import MambaMixer
 from tinygrad.nn.state import load_state_dict
 from tqdm import tqdm
 from tinygrad.helpers import Context
+import numpy as np
 
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0, dtype=dtypes.bfloat16) -> Tensor:
   freqs = 1.0 / (theta ** (Tensor.arange(0, dim, 2)[:(dim // 2)] / dim))
@@ -56,10 +57,11 @@ class Attention:
     v = v.reshape(B,  T, -1, self.head_dim)
     keys, values = k, v
 
-    if getenv('ROPE'):
-      if not hasattr(self, "freq_cis"): self.freq_cis = precompute_freqs_cis(self.head_dim, self.max_context).cast(dtypes.float32).contiguous().realize()
-      freq_cis = self.freq_cis.shrink((None, (start_pos, start_pos+T),None,None,None))
-      q, keys = apply_rotary_emb_new(q, keys, freq_cis)
+    if not hasattr(self, "freq_cis"): 
+      if getenv('ROPE_GEN'): self.freq_cis = precompute_freqs_cis(self.head_dim, self.max_context).cast(dtypes.float32).contiguous().realize()
+      else: self.freq_cis = Tensor(np.load(fetch('https://huggingface.co/reddyn/samba/resolve/main/rope_cache.npy'))).contiguous().realize()
+    freq_cis = self.freq_cis.shrink((None, (start_pos, start_pos+T),None,None,None))
+    q, keys = apply_rotary_emb_new(q, keys, freq_cis)
 
     if not hasattr(self, "cache_kv"):
       self.cache_kv = Tensor.zeros(2, B, self.max_context, self.n_kv_heads, self.head_dim, dtype=x.dtype).contiguous().realize()
@@ -120,7 +122,8 @@ class Samba:
   def load_model(self):
     import torch
     # path = fetch('https://ml-modelstore-public.s3.ap-northeast-2.amazonaws.com/iter-1003200-ckpt.pth')
-    path = fetch('https://ml-modelstore-public.s3.ap-northeast-2.amazonaws.com/samba_instruct.pth')
+    # path = fetch('https://ml-modelstore-public.s3.ap-northeast-2.amazonaws.com/samba_instruct.pth')
+    path = fetch('https://huggingface.co/reddyn/samba/resolve/main/samba-chat')
     print('path: ', path)
     d = torch.load(path, weights_only=True)
     print(d.keys())
@@ -155,7 +158,7 @@ if __name__ == '__main__':
   # REF_NOPE
   # <|begin_of_text|>1,2,3,4,5,6,7,8,8,9,10,11,12,13,14,15,16,17,17,17,19,19,21,21,21,22,22,22,23,23,23,23,24,24,24,24,25,25,25,25,25,25,26,26,26,26
   prompt = "1,2,3,4,5,6,"
-  prompt = llama3_prompt_format('Why is the sky blue?')
+  prompt = llama3_prompt_format('How many bones are in the human body?')
   output = prompt
   prompt_tok = tokenizer.encode(prompt)
   sp = 0
