@@ -950,10 +950,13 @@ if __name__ == "__main__":
   else:
     fns = [fn for fn in iglob(output_name.format(idx="*")) if re.search(r"img_[0-9]+\.jpg$", fn)]
     idx = max(int(fn.split("_")[-1].split(".")[0]) for fn in fns) + 1 if len(fns) > 0 else 0
-
+  prompt = args.prompt
+  with open(os.path.join(args.output_dir, "prompt.txt"), "r") as f:
+    prompt = f.readlines()
+    prompt = "".join(prompt)
   with Tensor.test():
     opts = SamplingOptions(
-        prompt=args.prompt,
+        prompt=prompt,
         width=width,
         height=height,
         num_steps=num_steps,
